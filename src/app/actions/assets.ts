@@ -3,7 +3,12 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { fetchPrice, searchYahooSymbol, type Quote } from "@/lib/prices";
+import {
+  fetchPrice,
+  searchYahooSymbol,
+  fetchFinnhubProfile,
+  type Quote,
+} from "@/lib/prices";
 import { resolveCoinGeckoSlug } from "@/lib/crypto-slugs";
 
 type AssetClass = "equity" | "etf" | "crypto" | "cash";
@@ -17,11 +22,68 @@ export type AddAssetInput = {
   externalId: string | null; // user-provided override (e.g. Advanced slug)
   priceSource: PriceSource;
   quantity: number;
+  /** Optional logo URL from the search autocomplete (e.g. CoinGecko thumb). */
+  logo?: string | null;
 };
 
 export type AddAssetResult =
   | { ok: true; assetId: string }
   | { ok: false; error: string };
+
+export type MutateResult = { ok: true } | { ok: false; error: string };
+
+/**
+ * Append a new balance_snapshots row with the user's updated quantity. We
+ * don't mutate historical snapshots — dashboard always reads the latest.
+ * That way the history is preserved for future trend charts.
+ *
+ * RLS: inserts pass through the user's session; the policy requires the
+ * asset_id to belong to an asset owned by auth.uid().
+ */
+export async function updateAssetQuantity(
+  assetId: string,
+  quantity: number,
+): Promise<MutateResult> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not signed in" };
+
+  if (!(quantity > 0))
+    return { ok: false, error: "Quantity must be greater than zero" };
+
+  const { error } = await supabase.from("balance_snapshots").insert({
+    asset_id: assetId,
+    quantity,
+    source: "manual",
+  });
+
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/dashboard");
+  return { ok: true };
+}
+
+/**
+ * Delete an asset and all its history. Cascades to balance_snapshots and
+ * transactions via FK ON DELETE CASCADE.
+ *
+ * RLS: DELETE policy on assets checks user_id = auth.uid().
+ */
+export async function deleteAsset(assetId: string): Promise<MutateResult> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not signed in" };
+
+  const { error } = await supabase.from("assets").delete().eq("id", assetId);
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/dashboard");
+  return { ok: true };
+}
 
 /**
  * Create an asset + seed its first balance snapshot + cache a current price.
@@ -98,6 +160,17 @@ export async function addAsset(
     }
   }
 
+  // --- Resolve a logo URL. Prefer Finnhub's company profile (HD official
+  // logos). Fall back to any logo the client passed through (e.g. CoinGecko
+  // thumb from autocomplete).
+  let logoUrl: string | null = input.logo ?? null;
+  let profileExchange: string | null = null;
+  if (input.priceSource === "finnhub" && externalId) {
+    const profile = await fetchFinnhubProfile(externalId);
+    if (profile?.logo) logoUrl = profile.logo;
+    profileExchange = profile?.exchange ?? null;
+  }
+
   // --- Insert asset ---
   const { data: asset, error: assetErr } = await supabase
     .from("assets")
@@ -109,6 +182,10 @@ export async function addAsset(
       native_currency: quote?.currency ?? nativeCurrency,
       price_source: input.priceSource,
       external_id: externalId,
+      metadata:
+        logoUrl || profileExchange
+          ? { logo: logoUrl, exchange: profileExchange }
+          : {},
     })
     .select("id")
     .single();

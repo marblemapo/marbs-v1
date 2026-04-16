@@ -48,6 +48,41 @@ export function inferCurrencyFromTicker(ticker: string): string {
 }
 
 /**
+ * Finnhub /stock/profile2 — one-time company profile fetch. Used to grab the
+ * logo URL on asset creation. Also returns canonical currency and name;
+ * callers can override our suffix-based inference when present.
+ *
+ * Returns null if Finnhub doesn't have a profile for this symbol (common for
+ * non-US tickers outside the premium plan).
+ */
+export async function fetchFinnhubProfile(symbol: string): Promise<{
+  logo: string | null;
+  name: string | null;
+  currency: string | null;
+  exchange: string | null;
+} | null> {
+  const key = process.env.FINNHUB_API_KEY;
+  if (!key) return null;
+  const url = `https://finnhub.io/api/v1/stock/profile2?symbol=${encodeURIComponent(
+    symbol,
+  )}&token=${key}`;
+  try {
+    const res = await fetch(url, { next: { revalidate: 86400 } }); // 1 day cache
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!data || Object.keys(data).length === 0) return null;
+    return {
+      logo: data.logo || null,
+      name: data.name || null,
+      currency: data.currency || null,
+      exchange: data.exchange || null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Finnhub /quote — stock prices. Free tier: 60 req/min. Covers US + most
  * major exchanges. Returns { c: current_price } but no currency — we infer
  * from the ticker suffix above.

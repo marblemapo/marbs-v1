@@ -81,6 +81,7 @@ export function AddAssetDrawer({ baseCurrency = "USD" }: { baseCurrency?: string
       externalId,
       priceSource,
       quantity,
+      logo: picked?.thumb ?? null,
     };
 
     startTransition(async () => {

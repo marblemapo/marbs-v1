@@ -3,33 +3,10 @@ import { createClient } from "@/lib/supabase/server";
 import { Button } from "@/components/ui/button";
 import { AddAssetDrawer } from "@/components/add-asset-drawer";
 import { DisplayNameEditor } from "@/components/display-name-editor";
+import { AssetsList, type AssetListRow } from "@/components/assets-list";
 
 // Force dynamic — this page always reads live user + asset data.
 export const dynamic = "force-dynamic";
-
-type AssetRow = {
-  id: string;
-  name: string;
-  symbol: string | null;
-  asset_class: "equity" | "etf" | "crypto" | "cash";
-  native_currency: string;
-  price_source: "yahoo" | "coingecko" | "finnhub" | "twelvedata" | "manual";
-  external_id: string | null;
-  latest_quantity: number | null;
-  latest_price: number | null;
-};
-
-const CLASS_LABELS: Record<AssetRow["asset_class"], string> = {
-  equity: "Stock",
-  etf: "ETF",
-  crypto: "Crypto",
-  cash: "Cash",
-};
-
-const FMT_COMPACT = new Intl.NumberFormat("en-US", {
-  notation: "compact",
-  maximumFractionDigits: 2,
-});
 
 function formatMoney(value: number, currency: string) {
   try {
@@ -66,7 +43,7 @@ export default async function DashboardPage() {
   const { data: assets } = await supabase
     .from("assets")
     .select(
-      "id, name, symbol, asset_class, native_currency, price_source, external_id",
+      "id, name, symbol, asset_class, native_currency, price_source, external_id, metadata",
     )
     .order("created_at", { ascending: false });
 
@@ -110,25 +87,36 @@ export default async function DashboardPage() {
     }
   }
 
-  const rows: AssetRow[] = (assets ?? []).map((a) => ({
-    ...a,
-    latest_quantity: latestByAsset.get(a.id) ?? null,
-    latest_price: a.external_id
+  const rows: AssetListRow[] = (assets ?? []).map((a) => {
+    const latest_quantity = latestByAsset.get(a.id) ?? null;
+    const latest_price = a.external_id
       ? priceByKey.get(`${a.external_id}|${a.price_source}`) ?? null
       : a.price_source === "manual"
         ? 1
-        : null,
-  }));
+        : null;
+    const meta = (a.metadata ?? {}) as Record<string, unknown>;
+    const logo =
+      typeof meta.logo === "string" && meta.logo.length > 0 ? meta.logo : null;
+    return {
+      id: a.id,
+      name: a.name,
+      symbol: a.symbol,
+      asset_class: a.asset_class,
+      native_currency: a.native_currency,
+      price_source: a.price_source,
+      latest_quantity,
+      latest_price,
+      logo,
+      value_native:
+        latest_quantity != null && latest_price != null
+          ? latest_quantity * latest_price
+          : null,
+    };
+  });
 
   // Compute value per asset in its NATIVE currency. Cross-currency totals
   // deferred to the FX pass — for now we only sum assets in baseCurrency.
-  const rowsWithValue = rows.map((r) => {
-    const value =
-      r.latest_quantity != null && r.latest_price != null
-        ? r.latest_quantity * r.latest_price
-        : null;
-    return { ...r, value_native: value };
-  });
+  const rowsWithValue = rows;
 
   const sameCurrencyRows = rowsWithValue.filter(
     (r) => r.native_currency === baseCurrency && r.value_native != null,
@@ -210,55 +198,7 @@ export default async function DashboardPage() {
               </div>
             </div>
           ) : (
-            <div className="flex flex-col rounded-lg bg-surface border border-border divide-y divide-border overflow-hidden">
-              {rowsWithValue.map((r) => (
-                <div
-                  key={r.id}
-                  className="flex items-center justify-between p-4 hover:bg-surface-hover transition-colors"
-                >
-                  <div className="flex flex-col gap-0.5 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="font-display text-base font-bold truncate">
-                        {r.symbol ?? r.name}
-                      </span>
-                      <span className="text-[10px] text-text-muted uppercase tracking-wider font-medium">
-                        {CLASS_LABELS[r.asset_class]}
-                      </span>
-                    </div>
-                    <div className="text-xs text-text-muted truncate">
-                      {r.latest_quantity != null ? (
-                        <>
-                          <span className="tabular-nums">
-                            {FMT_COMPACT.format(r.latest_quantity)}
-                          </span>{" "}
-                          {r.asset_class === "cash"
-                            ? r.native_currency
-                            : r.asset_class === "crypto"
-                              ? (r.symbol ?? "").toLowerCase()
-                              : "shares"}
-                        </>
-                      ) : (
-                        "—"
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex flex-col items-end gap-0.5">
-                    <div className="font-display text-base font-bold tabular-nums">
-                      {r.value_native != null
-                        ? formatMoney(r.value_native, r.native_currency)
-                        : "—"}
-                    </div>
-                    <div className="text-[10px] text-text-muted uppercase tracking-wider">
-                      {r.price_source === "manual"
-                        ? "Cash"
-                        : r.latest_price != null
-                          ? `@ ${formatMoney(r.latest_price, r.native_currency)}`
-                          : "No price yet"}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
+            <AssetsList rows={rowsWithValue} />
           )}
         </section>
       </div>
