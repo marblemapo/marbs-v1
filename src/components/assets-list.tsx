@@ -145,8 +145,10 @@ export function AssetsList({ rows }: { rows: AssetListRow[] }) {
                     : "—"}
                 </div>
                 <div className="text-[10px] text-text-muted uppercase tracking-wider">
-                  {r.price_source === "manual"
-                    ? "Cash"
+                  {/* Cash rows: the class tag already says CASH and the
+                      quantity line already shows the currency. Don't repeat. */}
+                  {r.asset_class === "cash"
+                    ? null
                     : displayPrice != null
                       ? `@ ${formatMoney(displayPrice, displayCurrency)}`
                       : "No price yet"}

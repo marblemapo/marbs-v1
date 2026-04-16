@@ -10,6 +10,7 @@ import { addAsset, type AddAssetInput } from "@/app/actions/assets";
 import { SymbolAutocomplete } from "@/components/symbol-autocomplete";
 import type { SearchResult } from "@/app/api/search/route";
 import { CurrencySelect } from "@/components/currency-select";
+import { getCurrency } from "@/lib/currencies";
 
 type AssetClass = "equity" | "etf" | "crypto" | "cash";
 
@@ -56,17 +57,22 @@ export function AddAssetDrawer({ baseCurrency = "USD" }: { baseCurrency?: string
       .trim()
       .toUpperCase();
 
-    // For cash assets the Name is optional — default to "{CCY} cash" if
-    // blank. For stocks/crypto there's no Name field in the UI; we derive
-    // from the picked search result's company/coin name.
+    // For cash assets the Name is optional. When blank, default to the
+    // currency's human name ("Canadian Dollar") — clean on the dashboard
+    // without duplicating the CASH tag we already show.
+    //
+    // For cash we also set the *symbol* to the currency code (CAD, HKD, ...)
+    // so the row renders "CAD · CASH" in the big slot instead of the long
+    // name. The name stays as the secondary label.
     const rawName = (form.get("name") as string | null)?.trim();
+    const ccyInfo = getCurrency(nativeCurrency);
     const name =
       rawName ||
       picked?.name ||
-      (assetClass === "cash"
-        ? `${nativeCurrency} cash`
-        : symbol) ||
+      (assetClass === "cash" ? ccyInfo?.name ?? nativeCurrency : symbol) ||
       "";
+    const effectiveSymbol =
+      symbol ?? (assetClass === "cash" ? nativeCurrency : null);
 
     // Price source follows from class. externalId: Advanced override > picked
     // selection > null (server resolves).
@@ -83,7 +89,7 @@ export function AddAssetDrawer({ baseCurrency = "USD" }: { baseCurrency?: string
 
     const input: AddAssetInput = {
       name: name || "Unnamed asset",
-      symbol,
+      symbol: effectiveSymbol,
       assetClass,
       nativeCurrency,
       externalId,
