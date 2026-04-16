@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { CURRENCIES, type CurrencyOption } from "@/lib/currencies";
+import { CurrencyFlag } from "@/components/currency-flag";
 
 /**
  * Typeahead-style picker for an ISO 4217 currency. Rendered as a plain
@@ -140,6 +141,7 @@ export function CurrencySelect({
                 i === highlighted && "bg-surface-hover",
               )}
             >
+              <CurrencyFlag currency={c.code} size={20} />
               <span className="font-display font-bold text-sm w-12 shrink-0">
                 {c.code}
               </span>

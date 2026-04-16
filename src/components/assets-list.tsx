@@ -5,6 +5,7 @@ import Image from "next/image";
 import { EditAssetDrawer, type EditableAsset } from "@/components/edit-asset-drawer";
 import { useCurrency } from "@/components/currency-context";
 import { convertFx } from "@/lib/fx";
+import { CurrencyFlag } from "@/components/currency-flag";
 
 export type AssetListRow = EditableAsset & {
   asset_class: "equity" | "etf" | "crypto" | "cash";
@@ -93,8 +94,10 @@ export function AssetsList({ rows }: { rows: AssetListRow[] }) {
               onClick={() => setEditing(r)}
               className="flex items-center gap-3 p-4 hover:bg-surface-hover transition-colors text-left w-full"
             >
-              {/* Logo / initials */}
-              {r.logo ? (
+              {/* Avatar: flag for cash, logo for stocks/crypto, initials fallback */}
+              {r.asset_class === "cash" ? (
+                <CurrencyFlag currency={r.native_currency} size={36} />
+              ) : r.logo ? (
                 <Image
                   src={r.logo}
                   alt=""
