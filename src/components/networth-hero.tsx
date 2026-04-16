@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { convertFx } from "@/lib/fx";
+import { useCurrency } from "@/components/currency-context";
 
 type Row = {
   native_currency: string;
@@ -21,46 +22,13 @@ function formatMoney(value: number, currency: string) {
   }
 }
 
-// Remember the last currency the user picked — but only in-session, so
-// it doesn't diverge from profile.base_currency across devices.
-const STORAGE_KEY = "marbs:view-currency";
+/**
+ * Net-worth hero with a currency pill toggle. State lives in CurrencyContext
+ * so the asset list can re-render its row values in the selected currency too.
+ */
+export function NetWorthHero({ rows }: { rows: Row[] }) {
+  const { currency, setCurrency, currencies, fxRates } = useCurrency();
 
-export function NetWorthHero({
-  rows,
-  baseCurrency,
-  fxRates,
-}: {
-  rows: Row[];
-  baseCurrency: string;
-  /** null means FX fetch failed — we'll disable cross-currency totals. */
-  fxRates: Record<string, number> | null;
-}) {
-  // Deduped list of currencies user can toggle between.
-  const currencies = useMemo(() => {
-    const set = new Set<string>([baseCurrency]);
-    for (const r of rows) set.add(r.native_currency);
-    return Array.from(set);
-  }, [rows, baseCurrency]);
-
-  const [currency, setCurrency] = useState<string>(baseCurrency);
-
-  // Restore last-used currency from localStorage (client-only).
-  useEffect(() => {
-    const saved = typeof window !== "undefined"
-      ? window.localStorage.getItem(STORAGE_KEY)
-      : null;
-    if (saved && currencies.includes(saved)) setCurrency(saved);
-    // currencies change rarely; run on mount is enough.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem(STORAGE_KEY, currency);
-    }
-  }, [currency]);
-
-  // Compute total in selected currency, and count rows we had to skip.
   const { total, skipped } = useMemo(() => {
     let total = 0;
     let skipped = 0;
@@ -74,17 +42,12 @@ export function NetWorthHero({
         skipped++;
         continue;
       }
-      const converted = convertFx(
-        r.value_native,
-        r.native_currency,
-        currency,
-        fxRates,
-      );
-      if (converted == null) {
+      const c = convertFx(r.value_native, r.native_currency, currency, fxRates);
+      if (c == null) {
         skipped++;
         continue;
       }
-      total += converted;
+      total += c;
     }
     return { total, skipped };
   }, [rows, currency, fxRates]);

@@ -5,6 +5,7 @@ import { AddAssetDrawer } from "@/components/add-asset-drawer";
 import { DisplayNameEditor } from "@/components/display-name-editor";
 import { AssetsList, type AssetListRow } from "@/components/assets-list";
 import { NetWorthHero } from "@/components/networth-hero";
+import { CurrencyProvider } from "@/components/currency-context";
 import { fetchFxRates } from "@/lib/fx";
 
 // Force dynamic — this page always reads live user + asset data.
@@ -109,7 +110,8 @@ export default async function DashboardPage() {
   // fetchFxRates always returns base as 1, others relative to base. Cached 6h.
   const currencySet = new Set<string>([baseCurrency]);
   for (const r of rows) currencySet.add(r.native_currency);
-  const fxRates = await fetchFxRates(baseCurrency, Array.from(currencySet));
+  const currencies = Array.from(currencySet);
+  const fxRates = await fetchFxRates(baseCurrency, currencies);
 
   return (
     <main className="flex flex-1 flex-col items-center px-6">
@@ -137,15 +139,19 @@ export default async function DashboardPage() {
           </form>
         </header>
 
-        {/* Net-worth hero — client component for currency toggle */}
-        <NetWorthHero
-          rows={rowsWithValue.map((r) => ({
-            native_currency: r.native_currency,
-            value_native: r.value_native,
-          }))}
+        {/* Everything below shares currency state via CurrencyProvider so
+            the hero pill toggle also re-renders asset row values. */}
+        <CurrencyProvider
           baseCurrency={baseCurrency}
+          currencies={currencies}
           fxRates={fxRates}
-        />
+        >
+          <NetWorthHero
+            rows={rowsWithValue.map((r) => ({
+              native_currency: r.native_currency,
+              value_native: r.value_native,
+            }))}
+          />
 
         {/* Assets list */}
         <section className="flex flex-col gap-3">
@@ -170,6 +176,7 @@ export default async function DashboardPage() {
             <AssetsList rows={rowsWithValue} />
           )}
         </section>
+        </CurrencyProvider>
       </div>
     </main>
   );
