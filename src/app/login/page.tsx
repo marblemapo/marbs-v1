@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 
 export default function LoginPage() {
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [errorMsg, setErrorMsg] = useState("");
@@ -21,6 +22,9 @@ export default function LoginPage() {
       email,
       options: {
         emailRedirectTo: `${window.location.origin}/auth/callback`,
+        // Stored in auth.users.raw_user_meta_data. Only used on first sign-up
+        // via the handle_new_user trigger. Ignored for returning users.
+        data: name ? { display_name: name.trim() } : undefined,
       },
     });
 
@@ -64,22 +68,44 @@ export default function LoginPage() {
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="flex flex-col gap-3">
-            <Input
-              type="email"
-              name="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
-              required
-              autoFocus
-              autoComplete="email"
-              disabled={status === "sending"}
-              className="h-11"
-            />
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="name" className="text-[11px] text-text-muted uppercase tracking-wider font-medium">
+                Name
+                <span className="text-text-muted/60 normal-case tracking-normal font-normal ml-1.5">· optional, first sign-in only</span>
+              </label>
+              <Input
+                id="name"
+                type="text"
+                name="name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="How should we address you?"
+                autoComplete="name"
+                disabled={status === "sending"}
+                className="h-11"
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="email" className="text-[11px] text-text-muted uppercase tracking-wider font-medium">
+                Email
+              </label>
+              <Input
+                id="email"
+                type="email"
+                name="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@example.com"
+                required
+                autoComplete="email"
+                disabled={status === "sending"}
+                className="h-11"
+              />
+            </div>
             <Button
               type="submit"
               disabled={status === "sending" || !email}
-              className="h-11 font-semibold"
+              className="h-11 font-semibold mt-1"
             >
               {status === "sending" ? "Sending magic link…" : "Send magic link"}
             </Button>

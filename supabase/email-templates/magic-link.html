@@ -1,0 +1,120 @@
+<!--
+  Marbs — branded magic-link / confirmation email.
+  Used for both "Magic Link" and "Confirm signup" templates in Supabase.
+  Paste into: Supabase dashboard → Authentication → Email Templates.
+
+  Subject (same for both):  Sign in to Marbs
+
+  Supabase variables:
+    {{ .ConfirmationURL }}  — full magic link (token + redirect)
+    {{ .Email }}            — user's email
+    {{ .SiteURL }}          — the project's site URL
+
+  Design tokens kept inline because most email clients strip <style>
+  and don't support custom fonts. We use Georgia/Arial fallbacks so
+  the vibe holds even without web fonts.
+-->
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sign in to Marbs</title>
+</head>
+<body style="margin:0;padding:0;background-color:#0f0f10;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#0f0f10;padding:48px 16px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="480" cellpadding="0" cellspacing="0" border="0" style="max-width:480px;width:100%;background-color:#1c1c1e;border-radius:16px;overflow:hidden;border:1px solid rgba(255,255,255,0.08);">
+          <!-- Brand bar -->
+          <tr>
+            <td style="padding:28px 32px 0 32px;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td style="background-color:rgba(245,197,24,0.12);color:#f5c518;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;padding:6px 10px;border-radius:100px;">
+                    Marbs
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Hero -->
+          <tr>
+            <td style="padding:20px 32px 8px 32px;">
+              <h1 style="margin:0;font-family:Georgia,'Times New Roman',serif;font-size:28px;line-height:1.15;font-weight:700;color:#ffffff;letter-spacing:-0.02em;">
+                Sign in to your<br/>
+                <span style="color:#f5c518;">net worth.</span>
+              </h1>
+            </td>
+          </tr>
+
+          <!-- Body -->
+          <tr>
+            <td style="padding:16px 32px 8px 32px;">
+              <p style="margin:0;font-size:15px;line-height:1.6;color:#ebebf5;">
+                Tap the button below to sign in. The link expires in an hour and only works once — so nobody else can use it.
+              </p>
+            </td>
+          </tr>
+
+          <!-- CTA -->
+          <tr>
+            <td style="padding:24px 32px 8px 32px;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td style="background-color:#f5c518;border-radius:12px;">
+                    <a href="{{ .ConfirmationURL }}"
+                       style="display:inline-block;padding:14px 24px;font-size:15px;font-weight:700;color:#1c1c1e;text-decoration:none;letter-spacing:-0.01em;">
+                      Sign in to Marbs →
+                    </a>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Fallback link -->
+          <tr>
+            <td style="padding:24px 32px 8px 32px;">
+              <p style="margin:0;font-size:12px;line-height:1.6;color:#8e8e93;">
+                Button not working? Copy this link into your browser:
+              </p>
+              <p style="margin:4px 0 0 0;font-size:12px;line-height:1.5;color:#ebebf5;word-break:break-all;">
+                <a href="{{ .ConfirmationURL }}" style="color:#ebebf5;text-decoration:underline;">{{ .ConfirmationURL }}</a>
+              </p>
+            </td>
+          </tr>
+
+          <!-- Divider -->
+          <tr>
+            <td style="padding:28px 32px 0 32px;">
+              <div style="height:1px;background-color:rgba(255,255,255,0.08);"></div>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="padding:20px 32px 28px 32px;">
+              <p style="margin:0;font-size:12px;line-height:1.6;color:#8e8e93;">
+                You received this because {{ .Email }} was used to sign in to Marbs — a privacy-first multi-asset net-worth tracker. If that wasn&rsquo;t you, ignore this email. No account is created until the link is opened.
+              </p>
+            </td>
+          </tr>
+        </table>
+
+        <!-- Outer footer -->
+        <table role="presentation" width="480" cellpadding="0" cellspacing="0" border="0" style="max-width:480px;width:100%;margin-top:20px;">
+          <tr>
+            <td align="center" style="padding:0 16px;">
+              <p style="margin:0;font-size:11px;line-height:1.5;color:#555559;letter-spacing:0.04em;">
+                Marbs · Your net worth, private by default.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
