@@ -6,6 +6,46 @@ import { cn } from "@/lib/utils";
 import type { SearchResult } from "@/app/api/search/route";
 
 /**
+ * Finnhub hosts logos at a predictable URL pattern. Hit rate is ~60% —
+ * works for US / UK / JP / CA, misses for DE / HK / KR / etc. We set the
+ * <img src> to this URL and fall back to initials on error, so the cost
+ * of a miss is one broken request per result with no extra API calls.
+ */
+function finnhubLogoUrl(symbol: string): string {
+  return `https://static2.finnhub.io/file/publicdatany/finnhubimage/stock_logo/${encodeURIComponent(symbol)}.png`;
+}
+
+function ResultAvatar({ r }: { r: SearchResult }) {
+  const [failed, setFailed] = useState(false);
+
+  const src =
+    !failed && r.thumb
+      ? r.thumb
+      : !failed && r.source === "finnhub"
+        ? finnhubLogoUrl(r.symbol)
+        : null;
+
+  if (src) {
+    // eslint-disable-next-line @next/next/no-img-element
+    return (
+      <img
+        src={src}
+        alt=""
+        loading="lazy"
+        onError={() => setFailed(true)}
+        className="w-5 h-5 rounded-full shrink-0 bg-white/5 object-contain"
+      />
+    );
+  }
+
+  return (
+    <div className="w-5 h-5 rounded-full bg-gold-dim text-gold text-[9px] font-bold flex items-center justify-center shrink-0">
+      {r.symbol.slice(0, 2)}
+    </div>
+  );
+}
+
+/**
  * Typeahead for stock/ETF/crypto symbols. Debounced 250ms, min 2 chars.
  * Arrows + Enter to pick; Esc to dismiss.
  *
@@ -169,14 +209,7 @@ export function SymbolAutocomplete({ assetClass, onChange, placeholder }: Props)
                 i === highlighted && "bg-surface-hover",
               )}
             >
-              {r.thumb ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={r.thumb} alt="" className="w-5 h-5 rounded-full shrink-0" />
-              ) : (
-                <div className="w-5 h-5 rounded-full bg-gold-dim text-gold text-[9px] font-bold flex items-center justify-center shrink-0">
-                  {r.symbol.slice(0, 2)}
-                </div>
-              )}
+              <ResultAvatar r={r} />
               <div className="flex flex-col gap-0.5 min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <span className="font-display font-bold text-sm truncate">{r.symbol}</span>
