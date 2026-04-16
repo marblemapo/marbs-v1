@@ -171,6 +171,13 @@ export async function addAsset(
     profileExchange = profile?.exchange ?? null;
   }
 
+  // CoinGecko returns 24px thumbs from its /search endpoint. That's fine for
+  // the autocomplete dropdown (20px rendering) but blurry on the 36px asset
+  // row. Upgrade the URL to /small/ (50px) with a simple path swap.
+  if (input.priceSource === "coingecko" && logoUrl?.includes("/thumb/")) {
+    logoUrl = logoUrl.replace("/thumb/", "/small/");
+  }
+
   // --- Insert asset ---
   const { data: asset, error: assetErr } = await supabase
     .from("assets")
