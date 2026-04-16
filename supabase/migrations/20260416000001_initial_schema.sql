@@ -19,12 +19,11 @@
 -- =============================================================================
 
 -- -----------------------------------------------------------------------------
--- Extensions
--- -----------------------------------------------------------------------------
-create extension if not exists "uuid-ossp";
-
--- -----------------------------------------------------------------------------
 -- Enums
+-- -----------------------------------------------------------------------------
+-- gen_random_uuid() is built into Postgres 13+ (Supabase uses 15+), no extension
+-- needed. uuid-ossp is available but lives in `extensions` schema, not public's
+-- search path.
 -- -----------------------------------------------------------------------------
 create type asset_class as enum ('equity', 'etf', 'crypto', 'cash');
 create type price_source as enum ('yahoo', 'coingecko', 'finnhub', 'twelvedata', 'manual');
@@ -66,7 +65,7 @@ create trigger on_auth_user_created
 -- assets  (user-owned tradable instrument)
 -- -----------------------------------------------------------------------------
 create table public.assets (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   user_id uuid not null references public.profiles(id) on delete cascade,
   name text not null,
   symbol text,                        -- e.g. AAPL, 0700.HK, BTC, 'USD cash'
@@ -88,7 +87,7 @@ comment on column public.assets.external_id is 'Lookup key for price_source (e.g
 -- transactions  (ledger mode — stocks/ETFs where cost basis matters)
 -- -----------------------------------------------------------------------------
 create table public.transactions (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   asset_id uuid not null references public.assets(id) on delete cascade,
   type transaction_type not null,
   quantity numeric(20, 8) not null,
@@ -107,7 +106,7 @@ create index transactions_occurred_at_idx on public.transactions(occurred_at des
 -- balance_snapshots  (balance mode — cash/crypto; point-in-time value)
 -- -----------------------------------------------------------------------------
 create table public.balance_snapshots (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   asset_id uuid not null references public.assets(id) on delete cascade,
   balance_native numeric(20, 8) not null,
   snapshot_at timestamptz not null default now(),
@@ -127,7 +126,7 @@ create index balance_snapshots_latest_idx
 -- goals
 -- -----------------------------------------------------------------------------
 create table public.goals (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   user_id uuid not null references public.profiles(id) on delete cascade,
   name text not null,
   target_amount numeric(20, 2) not null,
