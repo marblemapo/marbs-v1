@@ -143,19 +143,23 @@ export function AddAssetDrawer({ baseCurrency = "USD" }: { baseCurrency?: string
                 name="symbol"
                 placeholder={
                   assetClass === "crypto"
-                    ? "BTC · ETH · SOL"
-                    : "AAPL · 0700.HK · VWRL.L"
+                    ? "e.g. btc, eth, sol"
+                    : "e.g. aapl, 0700.hk, vwrl.l"
                 }
                 required
                 autoFocus
-                className="h-11 font-mono uppercase"
+                autoComplete="off"
+                spellCheck={false}
+                className="h-11"
               />
-              {assetClass === "crypto" && (
-                <p className="text-xs text-text-muted">
-                  For crypto we look up CoinGecko by the symbol. For less common
-                  coins, add the CoinGecko slug in Advanced.
-                </p>
-              )}
+              <p className="text-xs text-text-muted">
+                {assetClass === "crypto" ? (
+                  <>Type any ticker. We look up CoinGecko automatically. For
+                    less common coins, add the CoinGecko slug in Advanced.</>
+                ) : (
+                  <>Type it however you like — we&apos;ll standardize it.</>
+                )}
+              </p>
             </div>
           )}
 
@@ -189,7 +193,8 @@ export function AddAssetDrawer({ baseCurrency = "USD" }: { baseCurrency?: string
               min="0"
               placeholder={assetClass === "cash" ? "12000" : "100"}
               required
-              className="h-11 font-mono tabular-nums"
+              inputMode="decimal"
+              className="h-11 tabular-nums"
             />
           </div>
 
@@ -207,7 +212,9 @@ export function AddAssetDrawer({ baseCurrency = "USD" }: { baseCurrency?: string
               placeholder="USD"
               maxLength={3}
               required
-              className="h-11 font-mono uppercase w-28"
+              autoComplete="off"
+              spellCheck={false}
+              className="h-11 w-28"
             />
             <p className="text-xs text-text-muted">
               ISO code. {assetClass === "equity" || assetClass === "etf"
@@ -224,8 +231,10 @@ export function AddAssetDrawer({ baseCurrency = "USD" }: { baseCurrency?: string
               </summary>
               <Input
                 name="externalId"
-                placeholder="bitcoin · ethereum · polkadot"
-                className="h-11 font-mono mt-2"
+                placeholder="e.g. bitcoin, ethereum, polkadot"
+                autoComplete="off"
+                spellCheck={false}
+                className="h-11 mt-2"
               />
             </details>
           )}
