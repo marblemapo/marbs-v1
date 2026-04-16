@@ -7,6 +7,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { addAsset, type AddAssetInput } from "@/app/actions/assets";
+import { SymbolAutocomplete } from "@/components/symbol-autocomplete";
+import type { SearchResult } from "@/app/api/search/route";
 
 type AssetClass = "equity" | "etf" | "crypto" | "cash";
 
@@ -23,9 +25,15 @@ export function AddAssetDrawer({ baseCurrency = "USD" }: { baseCurrency?: string
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
+  // Autocomplete state (lifted out of the typeahead so we can submit it).
+  const [picked, setPicked] = useState<SearchResult | null>(null);
+  const [rawSymbol, setRawSymbol] = useState<string>("");
+
   function reset() {
     setAssetClass("equity");
     setError(null);
+    setPicked(null);
+    setRawSymbol("");
   }
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
@@ -33,23 +41,31 @@ export function AddAssetDrawer({ baseCurrency = "USD" }: { baseCurrency?: string
     setError(null);
     const form = new FormData(e.currentTarget);
 
-    // Build input shape from form, with class-conditional defaults.
-    const symbol = (form.get("symbol") as string | null)?.trim().toUpperCase() || null;
-    const name = (form.get("name") as string | null)?.trim() || (symbol ?? "");
+    // Symbol: prefer the autocomplete selection (canonical ticker + externalId).
+    // Fall back to the raw query if user didn't pick from the dropdown.
+    const symbol =
+      (picked?.symbol ?? rawSymbol).trim().toUpperCase() || null;
+
+    // Advanced override for crypto still wins if user filled it.
+    const advExternalId =
+      (form.get("externalId") as string | null)?.trim() || null;
+
+    const name =
+      (form.get("name") as string | null)?.trim() ||
+      picked?.name ||
+      symbol ||
+      "";
     const quantity = Number(form.get("quantity"));
     const nativeCurrency = ((form.get("nativeCurrency") as string) ?? baseCurrency)
       .trim()
       .toUpperCase();
-    const externalIdRaw = (form.get("externalId") as string | null)?.trim() || null;
 
-    // Price source follows from class.
-    // externalId is ONLY set when the user explicitly provided one (Advanced).
-    // Otherwise leave null — server resolves (crypto: slug lookup; stocks:
-    // uppercased symbol) so the logic lives in one place.
+    // Price source follows from class. externalId: Advanced override > picked
+    // selection > null (server resolves).
     let priceSource: AddAssetInput["priceSource"];
-    let externalId: string | null = externalIdRaw;
+    let externalId: string | null = advExternalId ?? picked?.externalId ?? null;
     if (assetClass === "equity" || assetClass === "etf") {
-      priceSource = "yahoo";
+      priceSource = "finnhub";
     } else if (assetClass === "crypto") {
       priceSource = "coingecko";
     } else {
@@ -129,32 +145,43 @@ export function AddAssetDrawer({ baseCurrency = "USD" }: { baseCurrency?: string
             </p>
           </div>
 
-          {/* Symbol / ticker */}
+          {/* Symbol / ticker with typeahead */}
           {assetClass !== "cash" && (
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="symbol" className="text-[11px] text-text-muted uppercase tracking-wider font-medium">
-                Symbol
+              <Label className="text-[11px] text-text-muted uppercase tracking-wider font-medium">
+                Search
               </Label>
-              <Input
-                id="symbol"
-                name="symbol"
+              <SymbolAutocomplete
+                assetClass={assetClass}
+                onChange={(selection, raw) => {
+                  setPicked(selection);
+                  setRawSymbol(raw);
+                }}
                 placeholder={
                   assetClass === "crypto"
-                    ? "e.g. btc, eth, sol"
-                    : "e.g. aapl, 0700.hk, vwrl.l"
+                    ? "Type to search — btc, eth, solana…"
+                    : "Type to search — tesla, apple, 0700…"
                 }
-                required
-                autoFocus
-                autoComplete="off"
-                spellCheck={false}
-                className="h-11"
               />
               <p className="text-xs text-text-muted">
-                {assetClass === "crypto" ? (
-                  <>Type any ticker. We look up CoinGecko automatically. For
-                    less common coins, add the CoinGecko slug in Advanced.</>
+                {picked ? (
+                  <>
+                    Picked <span className="text-foreground font-semibold">{picked.symbol}</span>
+                    {picked.exchange && <> on <span className="text-foreground">{picked.exchange}</span></>}
+                    {" · "}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPicked(null);
+                        setRawSymbol("");
+                      }}
+                      className="underline hover:text-foreground"
+                    >
+                      clear
+                    </button>
+                  </>
                 ) : (
-                  <>Type it however you like — we&apos;ll standardize it.</>
+                  <>Name or ticker — we&apos;ll find it.</>
                 )}
               </p>
             </div>

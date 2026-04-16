@@ -10,9 +10,110 @@ export type Quote = {
   symbol: string;
   price: number;
   currency: string;
-  source: "yahoo" | "coingecko" | "manual";
+  source: "yahoo" | "coingecko" | "finnhub" | "manual";
   asOf: string; // ISO timestamp
 };
+
+/**
+ * Map a Finnhub/Yahoo exchange-suffix ticker to its trading currency.
+ * Finnhub's /quote doesn't return currency, so we infer from the suffix.
+ * Examples: "TSLA" → USD, "0700.HK" → HKD, "VOD.L" → GBP, "7203.T" → JPY.
+ */
+export function inferCurrencyFromTicker(ticker: string): string {
+  const parts = ticker.split(".");
+  if (parts.length < 2) return "USD";
+  const suffix = parts[parts.length - 1].toUpperCase();
+  const map: Record<string, string> = {
+    HK: "HKD",
+    L: "GBP", LON: "GBP",
+    T: "JPY",
+    TO: "CAD", V: "CAD",
+    DE: "EUR", F: "EUR", MU: "EUR", DU: "EUR", TG: "EUR",
+    AS: "EUR", PA: "EUR", MI: "EUR", MC: "EUR", BR: "EUR",
+    SW: "CHF", VX: "CHF",
+    ST: "SEK", CO: "DKK", OL: "NOK", HE: "EUR",
+    AX: "AUD", NZ: "NZD",
+    SI: "SGD",
+    KS: "KRW", KQ: "KRW",
+    SS: "CNY", SZ: "CNY",
+    NS: "INR", BO: "INR",
+    SA: "BRL",
+    MX: "MXN",
+    JK: "IDR",
+    BK: "THB",
+    TW: "TWD",
+    JO: "ZAR",
+  };
+  return map[suffix] ?? "USD";
+}
+
+/**
+ * Finnhub /quote — stock prices. Free tier: 60 req/min. Covers US + most
+ * major exchanges. Returns { c: current_price } but no currency — we infer
+ * from the ticker suffix above.
+ */
+export async function fetchFinnhubQuote(symbol: string): Promise<Quote | null> {
+  const key = process.env.FINNHUB_API_KEY;
+  if (!key) return null;
+  const url = `https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(symbol)}&token=${key}`;
+  try {
+    const res = await fetch(url, { next: { revalidate: 60 } });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const price = typeof data?.c === "number" ? data.c : null;
+    if (!price) return null;
+    return {
+      symbol,
+      price,
+      currency: inferCurrencyFromTicker(symbol),
+      source: "finnhub",
+      asOf: data?.t
+        ? new Date(data.t * 1000).toISOString()
+        : new Date().toISOString(),
+    };
+  } catch {
+    return null;
+  }
+}
+
+const YAHOO_UA =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+
+/**
+ * Resolve a free-form stock query (ticker, company name, or partial) to a
+ * canonical Yahoo ticker. Used as a fallback when the user types "tesla"
+ * instead of "TSLA". Returns null if nothing likely-equity-or-ETF matches.
+ */
+export async function searchYahooSymbol(query: string): Promise<string | null> {
+  if (!query.trim()) return null;
+  const url = `https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(
+    query,
+  )}&quotesCount=8&newsCount=0&lang=en-US&region=US`;
+  try {
+    const res = await fetch(url, {
+      headers: { "User-Agent": YAHOO_UA },
+      next: { revalidate: 300 },
+    });
+    if (!res.ok) return null;
+
+    type YQ = { symbol?: string; quoteType?: string };
+    const data = await res.json();
+    const quotes: YQ[] = data?.quotes ?? [];
+
+    // Prefer exact-symbol match, then first equity/etf.
+    const upper = query.trim().toUpperCase();
+    const exact = quotes.find((q) => q.symbol?.toUpperCase() === upper);
+    if (exact?.symbol) return exact.symbol;
+    const first = quotes.find(
+      (q) =>
+        q.symbol &&
+        (q.quoteType === "EQUITY" || q.quoteType === "ETF" || q.quoteType === "INDEX"),
+    );
+    return first?.symbol ?? null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Yahoo Finance — listed securities + FX (via `EURUSD=X` convention).
@@ -26,11 +127,7 @@ export async function fetchYahooQuote(symbol: string): Promise<Quote | null> {
 
   try {
     const res = await fetch(url, {
-      headers: {
-        // Yahoo blocks requests without a user-agent from some IPs.
-        "User-Agent":
-          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-      },
+      headers: { "User-Agent": YAHOO_UA }, // Yahoo blocks empty UAs from some IPs
       next: { revalidate: 60 }, // Next.js server cache, 60s
     });
     if (!res.ok) return null;
@@ -101,7 +198,7 @@ export async function fetchCoinGeckoQuote(
  * quote of price=1 so downstream value calculations (qty × price) still work.
  */
 export async function fetchPrice(
-  source: "yahoo" | "coingecko" | "manual",
+  source: "yahoo" | "coingecko" | "finnhub" | "manual",
   externalId: string | null,
   nativeCurrency: string,
 ): Promise<Quote | null> {
@@ -115,6 +212,12 @@ export async function fetchPrice(
     };
   }
 
+  if (source === "finnhub") {
+    // Try Finnhub first; fall back to Yahoo if Finnhub rate-limits or misses.
+    const fh = await fetchFinnhubQuote(externalId);
+    if (fh) return fh;
+    return fetchYahooQuote(externalId);
+  }
   if (source === "yahoo") return fetchYahooQuote(externalId);
   if (source === "coingecko") return fetchCoinGeckoQuote(externalId, nativeCurrency);
   return null;

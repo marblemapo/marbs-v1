@@ -3,11 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { fetchPrice, type Quote } from "@/lib/prices";
+import { fetchPrice, searchYahooSymbol, type Quote } from "@/lib/prices";
 import { resolveCoinGeckoSlug } from "@/lib/crypto-slugs";
 
 type AssetClass = "equity" | "etf" | "crypto" | "cash";
-type PriceSource = "yahoo" | "coingecko" | "manual";
+type PriceSource = "yahoo" | "coingecko" | "finnhub" | "manual";
 
 export type AddAssetInput = {
   name: string;
@@ -79,18 +79,22 @@ export async function addAsset(
   if (externalId && input.priceSource !== "manual") {
     quote = await fetchPrice(input.priceSource, externalId, nativeCurrency);
 
-    if (!quote) {
-      const hint =
-        input.priceSource === "yahoo"
-          ? `Yahoo Finance doesn't recognize "${input.symbol}". Check the ticker — non-US stocks need a suffix (e.g. 0700.HK, VOD.L, 7203.T). Tesla is TSLA, not TESLA.`
-          : `CoinGecko doesn't have a price for "${input.symbol}". Try the full slug in Advanced.`;
-      return { ok: false, error: hint };
+    // Fallback: if direct lookup fails and we have a raw symbol (user typed
+    // "tesla" without picking from autocomplete), search by name and retry.
+    if (!quote && input.symbol) {
+      const resolved = await searchYahooSymbol(input.symbol);
+      if (resolved && resolved !== externalId) {
+        externalId = resolved;
+        quote = await fetchPrice(input.priceSource, externalId, nativeCurrency);
+      }
     }
 
-    // Sanity check: if the quote currency disagrees with what the user said,
-    // prefer the provider's currency (it knows better).
-    if (quote.currency !== nativeCurrency) {
-      // Silently accept — user can always edit. Value calc uses quote.currency.
+    if (!quote) {
+      const hint =
+        input.priceSource === "coingecko"
+          ? `CoinGecko doesn't have a price for "${input.symbol}". Try the full slug in Advanced (e.g. "bitcoin").`
+          : `Couldn't find "${input.symbol}" on the markets. Non-US stocks need a suffix (e.g. 0700.HK, VOD.L, 7203.T). Try the search as you type for correct matches.`;
+      return { ok: false, error: hint };
     }
   }
 
