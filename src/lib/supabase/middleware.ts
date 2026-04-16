@@ -1,11 +1,21 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
+// Paths that require a signed-in user. All subpaths are protected too.
+const PROTECTED_PREFIXES = ["/dashboard"];
+
+// Paths that only make sense when logged OUT. Signed-in visitors are bounced
+// to the dashboard.
+const AUTH_ONLY_PATHS = ["/login"];
+
 /**
- * Runs on every request (except static assets — see matcher in /middleware.ts).
- * Refreshes the user's auth session and makes it available to Server Components
- * via cookies. Without this, tokens expire silently and users get logged out
- * mid-session.
+ * Runs on every request (except static assets — see matcher in /src/proxy.ts).
+ *
+ * Does two jobs:
+ *   1. Refreshes the Supabase auth session via cookies (must stay — without
+ *      this, tokens expire silently and users get logged out).
+ *   2. Enforces auth guards: protected pages redirect to /login, login page
+ *      redirects to /dashboard if the user is already signed in.
  */
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
@@ -31,9 +41,28 @@ export async function updateSession(request: NextRequest) {
     },
   );
 
-  // Touch the session to refresh it if needed. Do not remove — without this,
-  // expired sessions aren't refreshed and users get logged out unexpectedly.
-  await supabase.auth.getUser();
+  // Touch the session to refresh it if needed.
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  const { pathname } = request.nextUrl;
+  const isProtected = PROTECTED_PREFIXES.some((p) => pathname.startsWith(p));
+  const isAuthOnly = AUTH_ONLY_PATHS.includes(pathname);
+
+  if (isProtected && !user) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/login";
+    url.searchParams.set("next", pathname);
+    return NextResponse.redirect(url);
+  }
+
+  if (isAuthOnly && user) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/dashboard";
+    url.search = "";
+    return NextResponse.redirect(url);
+  }
 
   return supabaseResponse;
 }
