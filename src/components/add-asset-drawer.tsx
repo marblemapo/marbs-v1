@@ -42,20 +42,17 @@ export function AddAssetDrawer({ baseCurrency = "USD" }: { baseCurrency?: string
       .toUpperCase();
     const externalIdRaw = (form.get("externalId") as string | null)?.trim() || null;
 
-    // Price source defaults based on class.
-    let priceSource: AddAssetInput["priceSource"] = "manual";
+    // Price source follows from class.
+    // externalId is ONLY set when the user explicitly provided one (Advanced).
+    // Otherwise leave null — server resolves (crypto: slug lookup; stocks:
+    // uppercased symbol) so the logic lives in one place.
+    let priceSource: AddAssetInput["priceSource"];
     let externalId: string | null = externalIdRaw;
     if (assetClass === "equity" || assetClass === "etf") {
       priceSource = "yahoo";
-      externalId = externalId ?? symbol; // yahoo takes the ticker directly
     } else if (assetClass === "crypto") {
       priceSource = "coingecko";
-      // CoinGecko wants a coin slug (e.g. "bitcoin"), not a ticker. If the user
-      // didn't provide one, fall back to the symbol lowercased — works for
-      // the most common cases but not always (e.g. "matic" vs "polygon").
-      externalId = externalId ?? symbol?.toLowerCase() ?? null;
     } else {
-      // cash: no external price lookup
       priceSource = "manual";
       externalId = null;
     }
