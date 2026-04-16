@@ -1,21 +1,23 @@
 "use client";
 
-import { useState } from "react";
 import { getCurrency } from "@/lib/currencies";
 import { cn } from "@/lib/utils";
 
 /**
- * Country flag avatar for a currency code, served by FlagCDN
- * (flagcdn.com — free, reliable, cached globally). Cropped to a
- * circle with object-cover; the crop keeps the most-recognizable
- * element centered for most major flags.
+ * Country flag for a currency code — rendered as an emoji glyph derived from
+ * the country's two-letter ISO 3166 code. No HTTP, no dependencies, no
+ * loading flash.
  *
- * Falls back to the gold-initials circle when:
- *   - the currency isn't in our map
- *   - FlagCDN returns 404 (via onError)
+ * Each letter A–Z has a "regional indicator" codepoint starting at U+1F1E6;
+ * two of them together form a flag (e.g. H+K = 🇭🇰). "EU" resolves to the
+ * European Union flag, which most modern platforms render.
  *
- * Size choice: FlagCDN serves at exact widths. We pick w40 for
- * ≤20px renders, w80 for larger. Anything beyond 40px gets w160.
+ * Fallback: if the currency isn't in our map, we show the gold-tinted
+ * initials circle so nothing looks broken.
+ *
+ * Caveat: Windows Chrome/Edge don't ship color emoji for regional indicators
+ * and render the flag as plain text ("HK"). On macOS / iOS / Android / most
+ * Linux the flag renders correctly.
  */
 export function CurrencyFlag({
   currency,
@@ -26,10 +28,9 @@ export function CurrencyFlag({
   size?: number;
   className?: string;
 }) {
-  const [failed, setFailed] = useState(false);
   const info = getCurrency(currency);
 
-  if (!info?.country || failed) {
+  if (!info?.country) {
     return (
       <div
         className={cn(
@@ -47,21 +48,38 @@ export function CurrencyFlag({
     );
   }
 
-  // Pick a sensible source width — FlagCDN only serves discrete sizes.
-  const flagW = size <= 20 ? 40 : size <= 40 ? 80 : 160;
-
   return (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
-      src={`https://flagcdn.com/w${flagW}/${info.country}.png`}
-      alt=""
-      loading="lazy"
-      onError={() => setFailed(true)}
+    <span
       className={cn(
-        "rounded-full object-cover shrink-0 bg-white/5",
+        "inline-flex items-center justify-center shrink-0 rounded-full bg-white/5 select-none leading-none",
         className,
       )}
-      style={{ width: size, height: size }}
-    />
+      style={{
+        width: size,
+        height: size,
+        // Flag emoji glyphs don't fill their font-size box; ~0.8× lands a
+        // well-sized flag inside the circle across macOS/iOS/Android.
+        fontSize: Math.round(size * 0.8),
+        lineHeight: 1,
+      }}
+      aria-label={`${info.name} flag`}
+    >
+      {countryToFlag(info.country)}
+    </span>
+  );
+}
+
+/**
+ * ISO 3166 alpha-2 code → regional-indicator flag emoji.
+ * Works for normal country codes. Returns empty string on bad input.
+ */
+function countryToFlag(countryCode: string): string {
+  const cc = countryCode.toUpperCase();
+  if (cc.length !== 2) return "";
+  const A = "A".charCodeAt(0);
+  const base = 0x1f1e6; // regional indicator "A"
+  return String.fromCodePoint(
+    base + (cc.charCodeAt(0) - A),
+    base + (cc.charCodeAt(1) - A),
   );
 }
