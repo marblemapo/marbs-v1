@@ -6,7 +6,7 @@ import { DisplayNameEditor } from "@/components/display-name-editor";
 import { AssetsList, type AssetListRow } from "@/components/assets-list";
 import { NetWorthHero } from "@/components/networth-hero";
 import { CurrencyProvider } from "@/components/currency-context";
-import { fetchFxRates } from "@/lib/fx";
+import { fetchFxRates, convertFx } from "@/lib/fx";
 
 // Force dynamic — this page always reads live user + asset data.
 export const dynamic = "force-dynamic";
@@ -104,14 +104,30 @@ export default async function DashboardPage() {
     };
   });
 
-  const rowsWithValue = rows;
-
   // Fetch FX rates for every currency present in the holdings plus the base.
   // fetchFxRates always returns base as 1, others relative to base. Cached 6h.
   const currencySet = new Set<string>([baseCurrency]);
   for (const r of rows) currencySet.add(r.native_currency);
   const currencies = Array.from(currencySet);
   const fxRates = await fetchFxRates(baseCurrency, currencies);
+
+  // Sort by base-currency-equivalent value, most valuable first. Rows with
+  // no price / no FX (null value) slide to the bottom so the list still
+  // puts real money at the top.
+  const baseValue = (r: (typeof rows)[number]): number | null => {
+    if (r.value_native == null) return null;
+    if (r.native_currency === baseCurrency) return r.value_native;
+    if (!fxRates) return null;
+    return convertFx(r.value_native, r.native_currency, baseCurrency, fxRates);
+  };
+  const rowsWithValue = [...rows].sort((a, b) => {
+    const av = baseValue(a);
+    const bv = baseValue(b);
+    if (av == null && bv == null) return 0;
+    if (av == null) return 1; // nulls last
+    if (bv == null) return -1;
+    return bv - av;
+  });
 
   return (
     <main className="flex flex-1 flex-col items-center px-6">

@@ -51,15 +51,16 @@ export function CurrencyFlag({
   return (
     <span
       className={cn(
-        "inline-flex items-center justify-center shrink-0 rounded-full bg-white/5 select-none leading-none",
+        "inline-flex items-center justify-center shrink-0 select-none leading-none",
         className,
       )}
       style={{
         width: size,
         height: size,
-        // Flag emoji glyphs don't fill their font-size box; ~0.8× lands a
-        // well-sized flag inside the circle across macOS/iOS/Android.
-        fontSize: Math.round(size * 0.8),
+        // Flag emoji glyphs don't fill their font-size box; slight
+        // over-sizing lands a nicely-filled flag at the given container
+        // size across macOS/iOS/Android.
+        fontSize: Math.round(size * 0.95),
         lineHeight: 1,
       }}
       aria-label={`${info.name} flag`}
