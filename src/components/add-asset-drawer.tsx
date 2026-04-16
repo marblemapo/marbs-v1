@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import { addAsset, type AddAssetInput } from "@/app/actions/assets";
 import { SymbolAutocomplete } from "@/components/symbol-autocomplete";
 import type { SearchResult } from "@/app/api/search/route";
+import { CurrencySelect } from "@/components/currency-select";
 
 type AssetClass = "equity" | "etf" | "crypto" | "cash";
 
@@ -50,15 +51,22 @@ export function AddAssetDrawer({ baseCurrency = "USD" }: { baseCurrency?: string
     const advExternalId =
       (form.get("externalId") as string | null)?.trim() || null;
 
-    const name =
-      (form.get("name") as string | null)?.trim() ||
-      picked?.name ||
-      symbol ||
-      "";
     const quantity = Number(form.get("quantity"));
     const nativeCurrency = ((form.get("nativeCurrency") as string) ?? baseCurrency)
       .trim()
       .toUpperCase();
+
+    // For cash assets the Name is optional — default to "{CCY} cash" if
+    // blank. For stocks/crypto there's no Name field in the UI; we derive
+    // from the picked search result's company/coin name.
+    const rawName = (form.get("name") as string | null)?.trim();
+    const name =
+      rawName ||
+      picked?.name ||
+      (assetClass === "cash"
+        ? `${nativeCurrency} cash`
+        : symbol) ||
+      "";
 
     // Price source follows from class. externalId: Advanced override > picked
     // selection > null (server resolves).
@@ -188,20 +196,26 @@ export function AddAssetDrawer({ baseCurrency = "USD" }: { baseCurrency?: string
             </div>
           )}
 
-          {/* Cash account name */}
+          {/* Cash account name (optional — defaults to "{CCY} cash") */}
           {assetClass === "cash" && (
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="name" className="text-[11px] text-text-muted uppercase tracking-wider font-medium">
                 Account name
+                <span className="text-text-muted/60 normal-case tracking-normal font-normal ml-1.5">
+                  · optional
+                </span>
               </Label>
               <Input
                 id="name"
                 name="name"
                 placeholder="Chase checking · HSBC savings"
-                required
                 autoFocus
+                autoComplete="off"
                 className="h-11"
               />
+              <p className="text-xs text-text-muted">
+                Leave blank and we&apos;ll call it &ldquo;CURRENCY cash&rdquo;.
+              </p>
             </div>
           )}
 
@@ -228,23 +242,19 @@ export function AddAssetDrawer({ baseCurrency = "USD" }: { baseCurrency?: string
             <Label htmlFor="nativeCurrency" className="text-[11px] text-text-muted uppercase tracking-wider font-medium">
               Native currency
             </Label>
-            <Input
+            <CurrencySelect
               id="nativeCurrency"
               name="nativeCurrency"
-              defaultValue={
-                assetClass === "crypto" ? "USD" : baseCurrency
-              }
-              placeholder="USD"
-              maxLength={3}
               required
-              autoComplete="off"
-              spellCheck={false}
-              className="h-11 w-28"
+              defaultValue={assetClass === "crypto" ? "USD" : baseCurrency}
+              placeholder="USD"
             />
             <p className="text-xs text-text-muted">
-              ISO code. {assetClass === "equity" || assetClass === "etf"
+              {assetClass === "equity" || assetClass === "etf"
                 ? "For LSE stocks use GBP, HKEX use HKD, etc."
-                : "For crypto this is the quote currency (usually USD)."}
+                : assetClass === "crypto"
+                  ? "Quote currency — usually USD."
+                  : "Which currency this cash is denominated in."}
             </p>
           </div>
 
