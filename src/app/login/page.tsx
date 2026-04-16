@@ -6,7 +6,6 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 
 export default function LoginPage() {
-  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [errorMsg, setErrorMsg] = useState("");
@@ -22,9 +21,6 @@ export default function LoginPage() {
       email,
       options: {
         emailRedirectTo: `${window.location.origin}/auth/callback`,
-        // Stored in auth.users.raw_user_meta_data. Only used on first sign-up
-        // via the handle_new_user trigger. Ignored for returning users.
-        data: name ? { display_name: name.trim() } : undefined,
       },
     });
 
@@ -69,23 +65,6 @@ export default function LoginPage() {
         ) : (
           <form onSubmit={handleSubmit} className="flex flex-col gap-3">
             <div className="flex flex-col gap-1.5">
-              <label htmlFor="name" className="text-[11px] text-text-muted uppercase tracking-wider font-medium">
-                Name
-                <span className="text-text-muted/60 normal-case tracking-normal font-normal ml-1.5">· optional, first sign-in only</span>
-              </label>
-              <Input
-                id="name"
-                type="text"
-                name="name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="How should we address you?"
-                autoComplete="name"
-                disabled={status === "sending"}
-                className="h-11"
-              />
-            </div>
-            <div className="flex flex-col gap-1.5">
               <label htmlFor="email" className="text-[11px] text-text-muted uppercase tracking-wider font-medium">
                 Email
               </label>
@@ -97,6 +76,7 @@ export default function LoginPage() {
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@example.com"
                 required
+                autoFocus
                 autoComplete="email"
                 disabled={status === "sending"}
                 className="h-11"
@@ -116,8 +96,10 @@ export default function LoginPage() {
         )}
 
         <div className="text-xs text-text-muted leading-relaxed border-t border-border pt-4">
-          By signing in, you agree to let Marbs store your asset data in its
-          database. No bank logins, no Plaid. Entry is manual.
+          New here? You can set your display name from the dashboard once signed in.
+          <br />
+          By signing in, you agree to let Marbs store your asset data in its database.
+          No bank logins, no Plaid. Entry is manual.
         </div>
       </div>
     </main>

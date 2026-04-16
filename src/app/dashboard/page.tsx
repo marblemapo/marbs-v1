@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { Button } from "@/components/ui/button";
 import { AddAssetDrawer } from "@/components/add-asset-drawer";
+import { DisplayNameEditor } from "@/components/display-name-editor";
 
 // Force dynamic — this page always reads live user + asset data.
 export const dynamic = "force-dynamic";
@@ -143,16 +144,19 @@ export default async function DashboardPage() {
       <div className="w-full max-w-[720px] flex flex-col gap-10 py-10">
         {/* Header */}
         <header className="flex items-start justify-between gap-4">
-          <div className="flex flex-col gap-1">
+          <div className="flex flex-col gap-1.5">
             <span className="text-[11px] text-text-muted uppercase tracking-wider font-medium">
               Dashboard
             </span>
-            <h1 className="font-display text-3xl font-bold leading-none tracking-tight">
-              Hello,{" "}
-              <span className="text-gold">
-                {profile?.display_name ?? user.email?.split("@")[0] ?? user.email}
+            <div className="flex items-baseline gap-2 flex-wrap">
+              <span className="font-display text-3xl font-bold leading-none tracking-tight">
+                Hello,
               </span>
-            </h1>
+              <DisplayNameEditor
+                initial={profile?.display_name ?? null}
+                fallback={user.email?.split("@")[0] ?? user.email ?? "friend"}
+              />
+            </div>
           </div>
           <form action="/auth/signout" method="POST">
             <Button type="submit" variant="ghost" size="sm" className="font-medium">
