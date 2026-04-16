@@ -4,22 +4,11 @@ import { Button } from "@/components/ui/button";
 import { AddAssetDrawer } from "@/components/add-asset-drawer";
 import { DisplayNameEditor } from "@/components/display-name-editor";
 import { AssetsList, type AssetListRow } from "@/components/assets-list";
+import { NetWorthHero } from "@/components/networth-hero";
+import { fetchFxRates } from "@/lib/fx";
 
 // Force dynamic — this page always reads live user + asset data.
 export const dynamic = "force-dynamic";
-
-function formatMoney(value: number, currency: string) {
-  try {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency,
-      maximumFractionDigits: value < 10 ? 4 : 2,
-    }).format(value);
-  } catch {
-    // Fallback if currency isn't a valid ISO code.
-    return `${currency} ${value.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
-  }
-}
 
 export default async function DashboardPage() {
   const supabase = await createClient();
@@ -114,18 +103,13 @@ export default async function DashboardPage() {
     };
   });
 
-  // Compute value per asset in its NATIVE currency. Cross-currency totals
-  // deferred to the FX pass — for now we only sum assets in baseCurrency.
   const rowsWithValue = rows;
 
-  const sameCurrencyRows = rowsWithValue.filter(
-    (r) => r.native_currency === baseCurrency && r.value_native != null,
-  );
-  const otherCurrencyRows = rowsWithValue.filter(
-    (r) => r.native_currency !== baseCurrency,
-  );
-
-  const total = sameCurrencyRows.reduce((sum, r) => sum + (r.value_native ?? 0), 0);
+  // Fetch FX rates for every currency present in the holdings plus the base.
+  // fetchFxRates always returns base as 1, others relative to base. Cached 6h.
+  const currencySet = new Set<string>([baseCurrency]);
+  for (const r of rows) currencySet.add(r.native_currency);
+  const fxRates = await fetchFxRates(baseCurrency, Array.from(currencySet));
 
   return (
     <main className="flex flex-1 flex-col items-center px-6">
@@ -153,30 +137,15 @@ export default async function DashboardPage() {
           </form>
         </header>
 
-        {/* Net-worth hero */}
-        <section className="flex flex-col gap-2 p-6 rounded-lg bg-surface border border-border">
-          <div className="text-[11px] text-text-muted uppercase tracking-wider font-medium">
-            Net worth · {baseCurrency}
-          </div>
-          <div className="font-display text-5xl font-bold tabular-nums">
-            {rowsWithValue.length === 0
-              ? "—"
-              : formatMoney(total, baseCurrency)}
-          </div>
-          <div className="text-sm text-text-muted">
-            {rowsWithValue.length === 0 ? (
-              "Add your first asset to see your net worth."
-            ) : otherCurrencyRows.length > 0 ? (
-              <>
-                Excludes {otherCurrencyRows.length} asset
-                {otherCurrencyRows.length === 1 ? "" : "s"} in other currencies —
-                FX conversion coming soon.
-              </>
-            ) : (
-              `Across ${sameCurrencyRows.length} asset${sameCurrencyRows.length === 1 ? "" : "s"}`
-            )}
-          </div>
-        </section>
+        {/* Net-worth hero — client component for currency toggle */}
+        <NetWorthHero
+          rows={rowsWithValue.map((r) => ({
+            native_currency: r.native_currency,
+            value_native: r.value_native,
+          }))}
+          baseCurrency={baseCurrency}
+          fxRates={fxRates}
+        />
 
         {/* Assets list */}
         <section className="flex flex-col gap-3">
