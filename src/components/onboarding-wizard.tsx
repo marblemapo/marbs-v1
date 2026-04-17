@@ -37,6 +37,109 @@ function blankCash(defaultCurrency: string): CashRow {
   return { id: uid(), currency: defaultCurrency, balance: "" };
 }
 
+// --- Row components live at module scope ---
+// Critical: these MUST be declared outside the parent. If defined inside
+// OnboardingWizard, every parent re-render creates a new component
+// reference → React unmounts and remounts the whole row → inputs lose
+// focus on every keystroke → user can't type anything. Hours of puzzled
+// smoke-test debugging lie this way.
+
+function StockLikeRow({
+  row,
+  assetClass,
+  onPatch,
+  onRemove,
+  canRemove,
+}: {
+  row: StockRow;
+  assetClass: "equity" | "crypto";
+  onPatch: (id: string, patch: Partial<StockRow>) => void;
+  onRemove: (id: string) => void;
+  canRemove: boolean;
+}) {
+  return (
+    <div className="flex items-start gap-2">
+      <div className="flex-1 min-w-0">
+        <SymbolAutocomplete
+          assetClass={assetClass}
+          placeholder={
+            assetClass === "crypto"
+              ? "Type to search — btc, eth, solana…"
+              : "Type to search — tesla, apple, 0700…"
+          }
+          onChange={(sel, raw) =>
+            onPatch(row.id, { picked: sel, rawSymbol: raw })
+          }
+        />
+      </div>
+      <Input
+        type="number"
+        step="any"
+        min="0"
+        placeholder="qty"
+        value={row.quantity}
+        onChange={(e) => onPatch(row.id, { quantity: e.target.value })}
+        inputMode="decimal"
+        className="h-11 w-28 tabular-nums"
+      />
+      <button
+        type="button"
+        onClick={() => onRemove(row.id)}
+        disabled={!canRemove}
+        aria-label="Remove row"
+        className="h-11 w-9 rounded-lg text-text-muted hover:text-foreground hover:bg-surface-hover transition-colors disabled:opacity-30 disabled:cursor-not-allowed shrink-0"
+      >
+        ×
+      </button>
+    </div>
+  );
+}
+
+function CashRowUI({
+  row,
+  onPatch,
+  onRemove,
+  canRemove,
+}: {
+  row: CashRow;
+  onPatch: (id: string, patch: Partial<CashRow>) => void;
+  onRemove: (id: string) => void;
+  canRemove: boolean;
+}) {
+  return (
+    <div className="flex items-start gap-2">
+      <div className="w-32 shrink-0">
+        <CurrencySelect
+          defaultValue={row.currency}
+          placeholder="USD"
+          onValueChange={(v) =>
+            onPatch(row.id, { currency: v.trim().toUpperCase() })
+          }
+        />
+      </div>
+      <Input
+        type="number"
+        step="any"
+        min="0"
+        placeholder="balance"
+        value={row.balance}
+        onChange={(e) => onPatch(row.id, { balance: e.target.value })}
+        inputMode="decimal"
+        className="h-11 flex-1 tabular-nums"
+      />
+      <button
+        type="button"
+        onClick={() => onRemove(row.id)}
+        disabled={!canRemove}
+        aria-label="Remove row"
+        className="h-11 w-9 rounded-lg text-text-muted hover:text-foreground hover:bg-surface-hover transition-colors disabled:opacity-30 disabled:cursor-not-allowed shrink-0"
+      >
+        ×
+      </button>
+    </div>
+  );
+}
+
 /**
  * First-time onboarding — a single-screen grid so users can log ~10 holdings
  * in under 3 minutes. No multi-step wizard; just sections for Stocks/ETFs,
@@ -161,103 +264,6 @@ export function OnboardingWizard({
       setErrors(failed);
       // Don't navigate — leave the user on the wizard to fix the failures.
     });
-  }
-
-  // ---------- Small sub-components for rows ----------
-  function StockLikeRow({
-    row,
-    assetClass,
-    onPatch,
-    onRemove,
-    canRemove,
-  }: {
-    row: StockRow;
-    assetClass: "equity" | "crypto";
-    onPatch: (id: string, patch: Partial<StockRow>) => void;
-    onRemove: (id: string) => void;
-    canRemove: boolean;
-  }) {
-    return (
-      <div className="flex items-start gap-2">
-        <div className="flex-1 min-w-0">
-          <SymbolAutocomplete
-            assetClass={assetClass}
-            placeholder={
-              assetClass === "crypto"
-                ? "Type to search — btc, eth, solana…"
-                : "Type to search — tesla, apple, 0700…"
-            }
-            onChange={(sel, raw) =>
-              onPatch(row.id, { picked: sel, rawSymbol: raw })
-            }
-          />
-        </div>
-        <Input
-          type="number"
-          step="any"
-          min="0"
-          placeholder="qty"
-          value={row.quantity}
-          onChange={(e) => onPatch(row.id, { quantity: e.target.value })}
-          inputMode="decimal"
-          className="h-11 w-28 tabular-nums"
-        />
-        <button
-          type="button"
-          onClick={() => onRemove(row.id)}
-          disabled={!canRemove}
-          aria-label="Remove row"
-          className="h-11 w-9 rounded-lg text-text-muted hover:text-foreground hover:bg-surface-hover transition-colors disabled:opacity-30 disabled:cursor-not-allowed shrink-0"
-        >
-          ×
-        </button>
-      </div>
-    );
-  }
-
-  function CashRowUI({
-    row,
-    onPatch,
-    onRemove,
-    canRemove,
-  }: {
-    row: CashRow;
-    onPatch: (id: string, patch: Partial<CashRow>) => void;
-    onRemove: (id: string) => void;
-    canRemove: boolean;
-  }) {
-    return (
-      <div className="flex items-start gap-2">
-        <div className="w-32 shrink-0">
-          <CurrencySelect
-            defaultValue={row.currency}
-            placeholder="USD"
-            onValueChange={(v) =>
-              onPatch(row.id, { currency: v.trim().toUpperCase() })
-            }
-          />
-        </div>
-        <Input
-          type="number"
-          step="any"
-          min="0"
-          placeholder="balance"
-          value={row.balance}
-          onChange={(e) => onPatch(row.id, { balance: e.target.value })}
-          inputMode="decimal"
-          className="h-11 flex-1 tabular-nums"
-        />
-        <button
-          type="button"
-          onClick={() => onRemove(row.id)}
-          disabled={!canRemove}
-          aria-label="Remove row"
-          className="h-11 w-9 rounded-lg text-text-muted hover:text-foreground hover:bg-surface-hover transition-colors disabled:opacity-30 disabled:cursor-not-allowed shrink-0"
-        >
-          ×
-        </button>
-      </div>
-    );
   }
 
   return (
