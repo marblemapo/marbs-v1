@@ -46,13 +46,13 @@ function blankCash(defaultCurrency: string): CashRow {
 
 function StockLikeRow({
   row,
-  assetClass,
+  uiClass,
   onPatch,
   onRemove,
   canRemove,
 }: {
   row: StockRow;
-  assetClass: "equity" | "crypto";
+  uiClass: "stock" | "crypto";
   onPatch: (id: string, patch: Partial<StockRow>) => void;
   onRemove: (id: string) => void;
   canRemove: boolean;
@@ -61,9 +61,9 @@ function StockLikeRow({
     <div className="flex items-start gap-2">
       <div className="flex-1 min-w-0">
         <SymbolAutocomplete
-          assetClass={assetClass}
+          assetClass={uiClass}
           placeholder={
-            assetClass === "crypto"
+            uiClass === "crypto"
               ? "Type to search — btc, eth, solana…"
               : "Type to search — tesla, apple, 0700…"
           }
@@ -202,7 +202,9 @@ export function OnboardingWizard({
       inputs.push({
         name: r.picked?.name || symbol || "Unnamed",
         symbol,
-        assetClass: "equity",
+        // Finnhub search tells us whether it's an ETF or equity; default
+        // equity for free-typed symbols.
+        assetClass: r.picked?.assetClass === "etf" ? "etf" : "equity",
         nativeCurrency: baseCurrency, // server will prefer quote.currency
         externalId: r.picked?.externalId ?? null,
         priceSource: "finnhub",
@@ -298,7 +300,7 @@ export function OnboardingWizard({
               <StockLikeRow
                 key={row.id}
                 row={row}
-                assetClass="equity"
+                uiClass="stock"
                 onPatch={patchStocks}
                 onRemove={(id) =>
                   setStocks((s) => s.filter((r) => r.id !== id))
@@ -329,7 +331,7 @@ export function OnboardingWizard({
               <StockLikeRow
                 key={row.id}
                 row={row}
-                assetClass="crypto"
+                uiClass="crypto"
                 onPatch={patchCrypto}
                 onRemove={(id) =>
                   setCrypto((s) => s.filter((r) => r.id !== id))

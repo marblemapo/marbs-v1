@@ -57,7 +57,13 @@ function ResultAvatar({ r }: { r: SearchResult }) {
  */
 
 type Props = {
-  assetClass: "equity" | "etf" | "crypto";
+  /**
+   * What the autocomplete searches for. "stock" queries Finnhub for both
+   * Common Stock + ETFs/ADRs; "crypto" queries CoinGecko. The returned
+   * SearchResult carries a normalized assetClass ("equity" | "etf" |
+   * "crypto") so the parent knows which DB enum to write.
+   */
+  assetClass: "stock" | "crypto";
   baseCurrency?: string;
   onChange: (selection: SearchResult | null, rawQuery: string) => void;
   placeholder?: string;
@@ -112,7 +118,7 @@ export function SymbolAutocomplete({ assetClass, onChange, placeholder }: Props)
       } finally {
         setLoading(false);
       }
-    }, 250);
+    }, 150);
 
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -152,6 +158,52 @@ export function SymbolAutocomplete({ assetClass, onChange, placeholder }: Props)
     } else if (e.key === "Escape") {
       setOpen(false);
     }
+  }
+
+  function clearSelection() {
+    setSelected(null);
+    setQuery("");
+    setResults([]);
+    setOpen(false);
+    onChange(null, "");
+  }
+
+  // When a pick is committed, replace the input entirely with a "chip" view:
+  // avatar + SYMBOL + exchange tag + × close button. Same pattern as
+  // multi-select UIs. Clicking × drops back into typing mode.
+  if (selected) {
+    return (
+      <div
+        ref={containerRef}
+        className={cn(
+          "flex items-center gap-2 h-11 px-2.5 rounded-lg border border-border bg-background/50",
+          "focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50",
+        )}
+      >
+        <ResultAvatar r={selected} />
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          <span className="font-display font-bold text-sm truncate">
+            {selected.symbol}
+          </span>
+          {selected.exchange && (
+            <span className="text-[10px] text-text-muted uppercase tracking-wider">
+              {selected.exchange}
+            </span>
+          )}
+          <span className="text-xs text-text-muted truncate hidden sm:inline">
+            {selected.name}
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={clearSelection}
+          aria-label="Change selection"
+          className="w-6 h-6 rounded-full text-text-muted hover:text-foreground hover:bg-surface-hover transition-colors flex items-center justify-center shrink-0"
+        >
+          ×
+        </button>
+      </div>
+    );
   }
 
   return (

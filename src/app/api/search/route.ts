@@ -23,6 +23,15 @@ export type SearchResult = {
   source: "finnhub" | "coingecko";
   exchange: string | null;  // Where it trades. Null for crypto.
   thumb: string | null;     // Optional icon URL (CoinGecko provides these).
+  /**
+   * Normalized asset class. Set from Finnhub's `type` field so the UI can
+   * collapse the Stock/ETF distinction but we still record the right value
+   * in the DB.
+   *   Common Stock / ADR → "equity"
+   *   ETP / ETF          → "etf"
+   *   crypto always      → "crypto"
+   */
+  assetClass: "equity" | "etf" | "crypto";
 };
 
 export async function GET(request: NextRequest) {
@@ -95,6 +104,7 @@ async function searchFinnhub(q: string): Promise<SearchResult[]> {
       const parts = sym.split(".");
       const suffix = parts.length > 1 ? parts[parts.length - 1].toUpperCase() : "";
       const exchange = suffix ? EX_NAME[suffix] ?? suffix : "US";
+      const isEtf = r.type === "ETP" || r.type === "ETF";
       return {
         symbol: sym,
         name: r.description ?? sym,
@@ -102,6 +112,7 @@ async function searchFinnhub(q: string): Promise<SearchResult[]> {
         source: "finnhub" as const,
         exchange,
         thumb: null,
+        assetClass: (isEtf ? "etf" : "equity") as "equity" | "etf",
       };
     });
 }
@@ -130,5 +141,6 @@ async function searchCoinGecko(q: string): Promise<SearchResult[]> {
       source: "coingecko" as const,
       exchange: null,
       thumb: c.thumb ?? null,
+      assetClass: "crypto" as const,
     }));
 }

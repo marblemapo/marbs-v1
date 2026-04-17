@@ -12,18 +12,23 @@ import type { SearchResult } from "@/app/api/search/route";
 import { CurrencySelect } from "@/components/currency-select";
 import { getCurrency } from "@/lib/currencies";
 
-type AssetClass = "equity" | "etf" | "crypto" | "cash";
+// UI class — the tab the user picks. The DB enum has a separate "etf" value
+// which we infer from the Finnhub search result, so there's no ETF tab here.
+type UiClass = "stock" | "crypto" | "cash";
 
-const CLASSES: { id: AssetClass; label: string; hint: string }[] = [
-  { id: "equity", label: "Stock", hint: "Single company (AAPL, 0700.HK)" },
-  { id: "etf", label: "ETF", hint: "Fund (VTI, QQQ, VWRL.L)" },
+const CLASSES: { id: UiClass; label: string; hint: string }[] = [
+  {
+    id: "stock",
+    label: "Stock",
+    hint: "Stocks and ETFs — AAPL, VTI, 0700.HK, VWRL.L",
+  },
   { id: "crypto", label: "Crypto", hint: "BTC, ETH, stablecoins" },
   { id: "cash", label: "Cash", hint: "Bank, savings, money market" },
 ];
 
 export function AddAssetDrawer({ baseCurrency = "USD" }: { baseCurrency?: string }) {
   const [open, setOpen] = useState(false);
-  const [assetClass, setAssetClass] = useState<AssetClass>("equity");
+  const [uiClass, setUiClass] = useState<UiClass>("stock");
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -32,7 +37,7 @@ export function AddAssetDrawer({ baseCurrency = "USD" }: { baseCurrency?: string
   const [rawSymbol, setRawSymbol] = useState<string>("");
 
   function reset() {
-    setAssetClass("equity");
+    setUiClass("stock");
     setError(null);
     setPicked(null);
     setRawSymbol("");
@@ -69,22 +74,29 @@ export function AddAssetDrawer({ baseCurrency = "USD" }: { baseCurrency?: string
     const name =
       rawName ||
       picked?.name ||
-      (assetClass === "cash" ? ccyInfo?.name ?? nativeCurrency : symbol) ||
+      (uiClass === "cash" ? ccyInfo?.name ?? nativeCurrency : symbol) ||
       "";
     const effectiveSymbol =
-      symbol ?? (assetClass === "cash" ? nativeCurrency : null);
+      symbol ?? (uiClass === "cash" ? nativeCurrency : null);
 
-    // Price source follows from class. externalId: Advanced override > picked
-    // selection > null (server resolves).
+    // Resolve:
+    //   assetClass (DB enum): picked.assetClass if we have a Finnhub match
+    //     ("equity" | "etf"), otherwise fall back to "equity" for the Stock
+    //     tab. Crypto / Cash are fixed by the tab choice.
+    //   priceSource: finnhub for stock-tab, coingecko for crypto, manual for cash.
     let priceSource: AddAssetInput["priceSource"];
     let externalId: string | null = advExternalId ?? picked?.externalId ?? null;
-    if (assetClass === "equity" || assetClass === "etf") {
+    let assetClass: AddAssetInput["assetClass"];
+    if (uiClass === "stock") {
       priceSource = "finnhub";
-    } else if (assetClass === "crypto") {
+      assetClass = picked?.assetClass === "etf" ? "etf" : "equity";
+    } else if (uiClass === "crypto") {
       priceSource = "coingecko";
+      assetClass = "crypto";
     } else {
       priceSource = "manual";
       externalId = null;
+      assetClass = "cash";
     }
 
     const input: AddAssetInput = {
@@ -138,15 +150,21 @@ export function AddAssetDrawer({ baseCurrency = "USD" }: { baseCurrency?: string
             <Label className="text-[11px] text-text-muted uppercase tracking-wider font-medium">
               Type
             </Label>
-            <div className="grid grid-cols-4 gap-1.5">
+            <div className="grid grid-cols-3 gap-1.5">
               {CLASSES.map((c) => (
                 <button
                   key={c.id}
                   type="button"
-                  onClick={() => setAssetClass(c.id)}
+                  onClick={() => {
+                    setUiClass(c.id);
+                    // Changing tabs invalidates any in-flight pick — the
+                    // search surface is different.
+                    setPicked(null);
+                    setRawSymbol("");
+                  }}
                   className={cn(
                     "h-10 rounded-lg text-sm font-semibold transition-colors border",
-                    assetClass === c.id
+                    uiClass === c.id
                       ? "bg-gold text-primary-foreground border-gold"
                       : "bg-surface text-text-secondary border-border hover:bg-surface-hover",
                   )}
@@ -156,24 +174,24 @@ export function AddAssetDrawer({ baseCurrency = "USD" }: { baseCurrency?: string
               ))}
             </div>
             <p className="text-xs text-text-muted">
-              {CLASSES.find((c) => c.id === assetClass)?.hint}
+              {CLASSES.find((c) => c.id === uiClass)?.hint}
             </p>
           </div>
 
           {/* Symbol / ticker with typeahead */}
-          {assetClass !== "cash" && (
+          {uiClass !== "cash" && (
             <div className="flex flex-col gap-1.5">
               <Label className="text-[11px] text-text-muted uppercase tracking-wider font-medium">
                 Search
               </Label>
               <SymbolAutocomplete
-                assetClass={assetClass}
+                assetClass={uiClass}
                 onChange={(selection, raw) => {
                   setPicked(selection);
                   setRawSymbol(raw);
                 }}
                 placeholder={
-                  assetClass === "crypto"
+                  uiClass === "crypto"
                     ? "Type to search — btc, eth, solana…"
                     : "Type to search — tesla, apple, 0700…"
                 }
@@ -203,7 +221,7 @@ export function AddAssetDrawer({ baseCurrency = "USD" }: { baseCurrency?: string
           )}
 
           {/* Cash account name (optional — defaults to "{CCY} cash") */}
-          {assetClass === "cash" && (
+          {uiClass === "cash" && (
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="name" className="text-[11px] text-text-muted uppercase tracking-wider font-medium">
                 Account name
@@ -228,7 +246,7 @@ export function AddAssetDrawer({ baseCurrency = "USD" }: { baseCurrency?: string
           {/* Quantity / balance */}
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="quantity" className="text-[11px] text-text-muted uppercase tracking-wider font-medium">
-              {assetClass === "cash" ? "Balance" : "Quantity"}
+              {uiClass === "cash" ? "Balance" : "Quantity"}
             </Label>
             <Input
               id="quantity"
@@ -236,7 +254,7 @@ export function AddAssetDrawer({ baseCurrency = "USD" }: { baseCurrency?: string
               type="number"
               step="any"
               min="0"
-              placeholder={assetClass === "cash" ? "12000" : "100"}
+              placeholder={uiClass === "cash" ? "12000" : "100"}
               required
               inputMode="decimal"
               className="h-11 tabular-nums"
@@ -252,20 +270,20 @@ export function AddAssetDrawer({ baseCurrency = "USD" }: { baseCurrency?: string
               id="nativeCurrency"
               name="nativeCurrency"
               required
-              defaultValue={assetClass === "crypto" ? "USD" : baseCurrency}
+              defaultValue={uiClass === "crypto" ? "USD" : baseCurrency}
               placeholder="USD"
             />
             <p className="text-xs text-text-muted">
-              {assetClass === "equity" || assetClass === "etf"
+              {uiClass === "stock"
                 ? "For LSE stocks use GBP, HKEX use HKD, etc."
-                : assetClass === "crypto"
+                : uiClass === "crypto"
                   ? "Quote currency — usually USD."
                   : "Which currency this cash is denominated in."}
             </p>
           </div>
 
           {/* Advanced: CoinGecko slug */}
-          {assetClass === "crypto" && (
+          {uiClass === "crypto" && (
             <details className="flex flex-col gap-1.5">
               <summary className="text-[11px] text-text-muted uppercase tracking-wider font-medium cursor-pointer select-none">
                 Advanced · CoinGecko slug

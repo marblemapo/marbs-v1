@@ -136,10 +136,26 @@ export async function addAsset(
     }
   }
 
-  // --- Fetch price (await — blocks the user, but guarantees the price lands) ---
+  // --- Fetch price + logo in parallel ---
+  // Both are external network hops (~300ms each on a warm cache). Running
+  // them sequentially wasted ~1x round trip per add. For 10 onboarding rows
+  // firing in parallel at the server action layer this was compounding.
   let quote: Quote | null = null;
+  let logoUrl: string | null = input.logo ?? null;
+  let profileExchange: string | null = null;
+
   if (externalId && input.priceSource !== "manual") {
-    quote = await fetchPrice(input.priceSource, externalId, nativeCurrency);
+    const [quoteRes, profileRes] = await Promise.all([
+      fetchPrice(input.priceSource, externalId, nativeCurrency),
+      // Only Finnhub has a company profile endpoint. For CoinGecko we already
+      // have the logo from the client-side thumb → skip the second call.
+      input.priceSource === "finnhub"
+        ? fetchFinnhubProfile(externalId)
+        : Promise.resolve(null),
+    ]);
+    quote = quoteRes;
+    if (profileRes?.logo) logoUrl = profileRes.logo;
+    if (profileRes?.exchange) profileExchange = profileRes.exchange;
 
     // Fallback: if direct lookup fails and we have a raw symbol (user typed
     // "tesla" without picking from autocomplete), search by name and retry.
@@ -147,7 +163,15 @@ export async function addAsset(
       const resolved = await searchYahooSymbol(input.symbol);
       if (resolved && resolved !== externalId) {
         externalId = resolved;
-        quote = await fetchPrice(input.priceSource, externalId, nativeCurrency);
+        const [retryQuote, retryProfile] = await Promise.all([
+          fetchPrice(input.priceSource, externalId, nativeCurrency),
+          input.priceSource === "finnhub"
+            ? fetchFinnhubProfile(externalId)
+            : Promise.resolve(null),
+        ]);
+        quote = retryQuote;
+        if (retryProfile?.logo) logoUrl = retryProfile.logo;
+        if (retryProfile?.exchange) profileExchange = retryProfile.exchange;
       }
     }
 
@@ -158,17 +182,6 @@ export async function addAsset(
           : `Couldn't find "${input.symbol}" on the markets. Non-US stocks need a suffix (e.g. 0700.HK, VOD.L, 7203.T). Try the search as you type for correct matches.`;
       return { ok: false, error: hint };
     }
-  }
-
-  // --- Resolve a logo URL. Prefer Finnhub's company profile (HD official
-  // logos). Fall back to any logo the client passed through (e.g. CoinGecko
-  // thumb from autocomplete).
-  let logoUrl: string | null = input.logo ?? null;
-  let profileExchange: string | null = null;
-  if (input.priceSource === "finnhub" && externalId) {
-    const profile = await fetchFinnhubProfile(externalId);
-    if (profile?.logo) logoUrl = profile.logo;
-    profileExchange = profile?.exchange ?? null;
   }
 
   // CoinGecko returns 24px thumbs from its /search endpoint. That's fine for
