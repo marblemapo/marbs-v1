@@ -20,12 +20,20 @@ export function CurrencySelect({
   required,
   defaultValue = "USD",
   placeholder = "USD",
+  onValueChange,
 }: {
   id?: string;
   name?: string;
   required?: boolean;
   defaultValue?: string;
   placeholder?: string;
+  /**
+   * Fired on every query change (typing) and on pick. Lets callers that
+   * aren't using normal FormData submit (e.g. OnboardingWizard) track the
+   * current code in React state. The value is the raw query — callers
+   * should normalize with trim().toUpperCase() before use.
+   */
+  onValueChange?: (value: string) => void;
 }) {
   const [query, setQuery] = useState(defaultValue);
   const [open, setOpen] = useState(false);
@@ -60,6 +68,7 @@ export function CurrencySelect({
   function pick(c: CurrencyOption) {
     setQuery(c.code);
     setOpen(false);
+    onValueChange?.(c.code);
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
@@ -96,6 +105,7 @@ export function CurrencySelect({
           setQuery(e.target.value);
           setOpen(true);
           setHighlighted(0);
+          onValueChange?.(e.target.value);
         }}
         onFocus={() => setOpen(true)}
         onKeyDown={handleKeyDown}

@@ -2,7 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 // Paths that require a signed-in user. All subpaths are protected too.
-const PROTECTED_PREFIXES = ["/dashboard"];
+const PROTECTED_PREFIXES = ["/dashboard", "/onboarding"];
 
 // Paths that only make sense when logged OUT. Signed-in visitors are bounced
 // to the dashboard.

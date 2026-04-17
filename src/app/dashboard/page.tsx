@@ -7,6 +7,7 @@ import { AssetsList, type AssetListRow } from "@/components/assets-list";
 import { NetWorthHero } from "@/components/networth-hero";
 import { CurrencyProvider } from "@/components/currency-context";
 import { fetchFxRates, convertFx } from "@/lib/fx";
+import { cn } from "@/lib/utils";
 
 // Force dynamic — this page always reads live user + asset data.
 export const dynamic = "force-dynamic";
@@ -179,13 +180,29 @@ export default async function DashboardPage() {
           </div>
 
           {rowsWithValue.length === 0 ? (
-            <div className="p-8 rounded-lg bg-surface border border-border text-center">
-              <div className="text-sm text-text-secondary mb-1">
-                No assets yet.
+            <div className="p-8 rounded-lg bg-surface border border-border flex flex-col items-center gap-4 text-center">
+              <div className="flex flex-col gap-1">
+                <div className="font-display text-lg font-bold">
+                  No holdings yet
+                </div>
+                <div className="text-sm text-text-secondary max-w-[380px]">
+                  Add everything in one pass — stocks, crypto, cash — and see
+                  your net worth in about three minutes.
+                </div>
               </div>
+              <a
+                href="/onboarding"
+                className={cn(
+                  "inline-flex items-center gap-2 h-11 px-5 rounded-lg font-semibold text-sm transition-colors",
+                  "bg-primary text-primary-foreground hover:bg-primary/80",
+                )}
+              >
+                Log my holdings →
+              </a>
               <div className="text-xs text-text-muted">
-                Tap <span className="text-foreground font-medium">+ Add asset</span>{" "}
-                to log a stock, crypto, or cash holding.
+                Prefer one at a time? Use the{" "}
+                <span className="text-foreground font-medium">+ Add asset</span>{" "}
+                button above.
               </div>
             </div>
           ) : (
