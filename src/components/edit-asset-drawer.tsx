@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, type FormEvent } from "react";
+import { useEffect, useState, useTransition, type FormEvent } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -49,9 +49,13 @@ export function EditAssetDrawer({
   const [pending, startTransition] = useTransition();
 
   // Reset state whenever a different asset is opened.
-  if (asset && quantity === "" && asset.latest_quantity != null) {
-    setQuantity(asset.latest_quantity.toString());
-  }
+  useEffect(() => {
+    if (asset) {
+      setQuantity(asset.latest_quantity?.toString() ?? "");
+      setError(null);
+      setConfirmDelete(false);
+    }
+  }, [asset?.id]);
 
   function handleClose() {
     setError(null);

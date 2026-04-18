@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { Button } from "@/components/ui/button";
 import { AddAssetDrawer } from "@/components/add-asset-drawer";
 import { DisplayNameEditor } from "@/components/display-name-editor";
@@ -7,7 +8,11 @@ import { AssetsList, type AssetListRow } from "@/components/assets-list";
 import { NetWorthHero } from "@/components/networth-hero";
 import { CurrencyProvider } from "@/components/currency-context";
 import { fetchFxRates, convertFx } from "@/lib/fx";
+import { fetchPrice } from "@/lib/prices";
 import { cn } from "@/lib/utils";
+
+// Re-fetch any price_cache row older than this on dashboard load.
+const PRICE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
 // Force dynamic — this page always reads live user + asset data.
 export const dynamic = "force-dynamic";
@@ -65,16 +70,61 @@ export default async function DashboardPage() {
     .map((a) => ({ external_id: a.external_id!, source: a.price_source }));
 
   const priceByKey = new Map<string, number>();
+  const fetchedAtByKey = new Map<string, number>();
   if (priceKeys.length) {
     const { data: prices } = await supabase
       .from("price_cache")
-      .select("external_id, source, price_native")
+      .select("external_id, source, price_native, fetched_at")
       .in(
         "external_id",
         priceKeys.map((k) => k.external_id),
       );
     for (const p of prices ?? []) {
-      priceByKey.set(`${p.external_id}|${p.source}`, Number(p.price_native));
+      const key = `${p.external_id}|${p.source}`;
+      priceByKey.set(key, Number(p.price_native));
+      if (p.fetched_at) fetchedAtByKey.set(key, new Date(p.fetched_at).getTime());
+    }
+  }
+
+  // Refresh any price whose cache is missing or older than PRICE_TTL_MS.
+  // Done in parallel; failures fall back to the stale cached value.
+  const now = Date.now();
+  const toRefresh = (assets ?? []).filter((a) => {
+    if (!a.external_id || a.price_source === "manual") return false;
+    const key = `${a.external_id}|${a.price_source}`;
+    const fetchedAt = fetchedAtByKey.get(key);
+    return fetchedAt == null || now - fetchedAt > PRICE_TTL_MS;
+  });
+
+  if (toRefresh.length) {
+    const fresh = await Promise.all(
+      toRefresh.map(async (a) => {
+        const quote = await fetchPrice(
+          a.price_source,
+          a.external_id,
+          a.native_currency,
+        );
+        return quote ? { asset: a, quote } : null;
+      }),
+    );
+
+    const admin = createAdminClient();
+    const upserts = fresh.filter((r): r is NonNullable<typeof r> => r != null);
+    for (const { asset, quote } of upserts) {
+      const key = `${asset.external_id}|${asset.price_source}`;
+      priceByKey.set(key, quote.price);
+    }
+    if (upserts.length) {
+      await admin.from("price_cache").upsert(
+        upserts.map(({ asset, quote }) => ({
+          external_id: asset.external_id!,
+          source: asset.price_source,
+          price_native: quote.price,
+          currency: quote.currency,
+          fetched_at: quote.asOf,
+        })),
+        { onConflict: "external_id,source" },
+      );
     }
   }
 

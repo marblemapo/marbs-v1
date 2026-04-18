@@ -191,40 +191,97 @@ export async function addAsset(
     logoUrl = logoUrl.replace("/thumb/", "/small/");
   }
 
-  // --- Insert asset ---
-  const { data: asset, error: assetErr } = await supabase
-    .from("assets")
-    .insert({
-      user_id: user.id,
-      name: input.name.trim(),
-      symbol: normalizedSymbol,
-      asset_class: input.assetClass,
-      native_currency: quote?.currency ?? nativeCurrency,
-      price_source: input.priceSource,
-      external_id: externalId,
-      metadata:
-        logoUrl || profileExchange
-          ? { logo: logoUrl, exchange: profileExchange }
-          : {},
-    })
-    .select("id")
-    .single();
+  // --- Duplicate detection ---
+  // If the user already owns this asset, we add to the existing position
+  // rather than creating a second row. Two matching rules:
+  //   - Stocks/ETFs/crypto: same price_source + same external_id. Symbol
+  //     alone isn't enough (e.g. TSLA vs TSLA.L are different assets).
+  //   - Cash: same asset_class=cash + same native_currency. A user can have
+  //     multiple USD accounts but the "cash in USD" tracked here sums up —
+  //     consistent with how we already default the name to "US Dollar".
+  //
+  // RLS scopes the lookup to the current user automatically.
+  let existingAssetId: string | null = null;
+  {
+    const q = supabase.from("assets").select("id").limit(1);
+    if (input.assetClass === "cash") {
+      q.eq("asset_class", "cash").eq("native_currency", nativeCurrency);
+    } else if (externalId) {
+      q.eq("price_source", input.priceSource).eq("external_id", externalId);
+    } else {
+      // Free-typed row with no canonical id — can't safely dedupe. New row.
+    }
+    const { data: matches } = await q;
+    if (matches && matches.length > 0) {
+      existingAssetId = matches[0].id;
+    }
+  }
 
-  if (assetErr || !asset)
-    return { ok: false, error: assetErr?.message ?? "Failed to create asset" };
+  let assetId: string;
 
-  // --- Seed the first balance snapshot ---
-  const { error: snapErr } = await supabase.from("balance_snapshots").insert({
-    asset_id: asset.id,
-    quantity: input.quantity,
-    source: "manual",
-  });
+  if (existingAssetId) {
+    // Sum quantities. Read the latest snapshot and insert a new one with
+    // (latest + input.quantity). History is preserved.
+    const { data: latestSnap } = await supabase
+      .from("balance_snapshots")
+      .select("quantity")
+      .eq("asset_id", existingAssetId)
+      .order("snapshot_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
-  if (snapErr) {
-    return {
-      ok: false,
-      error: `Asset created but snapshot failed: ${snapErr.message}`,
-    };
+    const prev = Number(latestSnap?.quantity ?? 0);
+    const { error: snapErr } = await supabase
+      .from("balance_snapshots")
+      .insert({
+        asset_id: existingAssetId,
+        quantity: prev + input.quantity,
+        source: "manual",
+      });
+    if (snapErr) {
+      return {
+        ok: false,
+        error: `Couldn't merge into existing asset: ${snapErr.message}`,
+      };
+    }
+    assetId = existingAssetId;
+  } else {
+    // --- Insert new asset ---
+    const { data: asset, error: assetErr } = await supabase
+      .from("assets")
+      .insert({
+        user_id: user.id,
+        name: input.name.trim(),
+        symbol: normalizedSymbol,
+        asset_class: input.assetClass,
+        native_currency: quote?.currency ?? nativeCurrency,
+        price_source: input.priceSource,
+        external_id: externalId,
+        metadata:
+          logoUrl || profileExchange
+            ? { logo: logoUrl, exchange: profileExchange }
+            : {},
+      })
+      .select("id")
+      .single();
+
+    if (assetErr || !asset)
+      return { ok: false, error: assetErr?.message ?? "Failed to create asset" };
+
+    // --- Seed the first balance snapshot ---
+    const { error: snapErr } = await supabase.from("balance_snapshots").insert({
+      asset_id: asset.id,
+      quantity: input.quantity,
+      source: "manual",
+    });
+
+    if (snapErr) {
+      return {
+        ok: false,
+        error: `Asset created but snapshot failed: ${snapErr.message}`,
+      };
+    }
+    assetId = asset.id;
   }
 
   // --- Cache the price (service role — price_cache is public-read only) ---
@@ -245,5 +302,5 @@ export async function addAsset(
   }
 
   revalidatePath("/dashboard");
-  return { ok: true, assetId: asset.id };
+  return { ok: true, assetId };
 }

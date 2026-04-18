@@ -96,6 +96,17 @@ export function CurrencySelect({
 
   return (
     <div ref={containerRef} className="relative">
+      {/* Flag sits inside the input when the code matches a known currency.
+          Positioned absolutely so the input's own padding handles text offset.
+          pointer-events-none so clicking the flag area lands in the input. */}
+      {exactMatch && (
+        <div
+          className="absolute left-3 top-1/2 pointer-events-none z-10"
+          style={{ transform: "translateY(calc(-50% - 1px))" }}
+        >
+          <CurrencyFlag currency={exactMatch.code} size={16} />
+        </div>
+      )}
       <Input
         id={id}
         name={name}
@@ -116,7 +127,7 @@ export function CurrencySelect({
         role="combobox"
         aria-expanded={open}
         aria-autocomplete="list"
-        className="h-11"
+        className={cn("h-11", exactMatch && "pl-10")}
       />
 
       {/* Exact match hint — so user can see the name of what they've typed */}
