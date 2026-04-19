@@ -19,18 +19,16 @@ export default function Icon() {
       >
         <div
           style={{
-            fontSize: 30,
+            fontSize: 44,
             fontWeight: 700,
             letterSpacing: "-0.04em",
             lineHeight: 1,
             color: "#7FFFD4",
-            // Layered text-shadow fakes a soft aqua bloom around the glyph
-            // at small sizes where a proper Gaussian blur gets crushed.
             textShadow:
               "0 0 6px rgba(127,255,212,0.6), 0 0 14px rgba(127,255,212,0.35)",
           }}
         >
-          W
+          m
         </div>
       </div>
     ),
