@@ -13,28 +13,23 @@ export default function AppleIcon() {
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          background:
-            "radial-gradient(circle at 28% 18%, #0d1f1a 0%, #000 65%)",
+          background: "#000",
           borderRadius: 38,
         }}
       >
-        <svg
-          width="124"
-          height="124"
-          viewBox="0 0 44 44"
-          fill="none"
-          xmlns="http://www.w3.org/2000/svg"
+        <div
+          style={{
+            fontSize: 88,
+            fontWeight: 700,
+            letterSpacing: "-0.04em",
+            lineHeight: 1,
+            color: "#7FFFD4",
+            textShadow:
+              "0 0 18px rgba(127,255,212,0.55), 0 0 40px rgba(127,255,212,0.3)",
+          }}
         >
-          <path
-            d="M 7 34 L 7 10 L 16 10 L 22 22 L 28 10 L 37 10 L 37 28 M 34 24 L 37 21 L 40 24"
-            stroke="#7FFFD4"
-            strokeWidth="3"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            fill="none"
-          />
-          <circle cx="38" cy="8" r="2.5" fill="#7FFFD4" />
-        </svg>
+          W
+        </div>
       </div>
     ),
     { ...size },

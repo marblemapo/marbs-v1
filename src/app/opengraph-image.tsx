@@ -41,29 +41,25 @@ export default function OpenGraphImage() {
                 width: 72,
                 height: 72,
                 borderRadius: 16,
-                background: "rgba(255,255,255,0.04)",
-                border: "1px solid rgba(127,255,212,0.3)",
+                background: "#000",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
               }}
             >
-              <svg
-                width="48"
-                height="48"
-                viewBox="0 0 44 44"
-                xmlns="http://www.w3.org/2000/svg"
+              <div
+                style={{
+                  fontSize: 36,
+                  fontWeight: 700,
+                  letterSpacing: "-0.04em",
+                  lineHeight: 1,
+                  color: "#7FFFD4",
+                  textShadow:
+                    "0 0 10px rgba(127,255,212,0.55), 0 0 22px rgba(127,255,212,0.3)",
+                }}
               >
-                <path
-                  d="M 7 34 L 7 10 L 16 10 L 22 22 L 28 10 L 37 10 L 37 28 M 34 24 L 37 21 L 40 24"
-                  stroke="#7FFFD4"
-                  strokeWidth="3"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  fill="none"
-                />
-                <circle cx="38" cy="8" r="2.5" fill="#7FFFD4" />
-              </svg>
+                W
+              </div>
             </div>
             <div
               style={{

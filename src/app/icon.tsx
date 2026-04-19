@@ -13,30 +13,25 @@ export default function Icon() {
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          background:
-            "radial-gradient(circle at 30% 20%, #0a1a15 0%, #000 60%)",
+          background: "#000",
           borderRadius: 14,
         }}
       >
-        <svg
-          width="44"
-          height="44"
-          viewBox="0 0 44 44"
-          fill="none"
-          xmlns="http://www.w3.org/2000/svg"
+        <div
+          style={{
+            fontSize: 30,
+            fontWeight: 700,
+            letterSpacing: "-0.04em",
+            lineHeight: 1,
+            color: "#7FFFD4",
+            // Layered text-shadow fakes a soft aqua bloom around the glyph
+            // at small sizes where a proper Gaussian blur gets crushed.
+            textShadow:
+              "0 0 6px rgba(127,255,212,0.6), 0 0 14px rgba(127,255,212,0.35)",
+          }}
         >
-          {/* Stylized M with right-peak extending as an upward tick */}
-          <path
-            d="M 7 34 L 7 10 L 16 10 L 22 22 L 28 10 L 37 10 L 37 28 M 34 24 L 37 21 L 40 24"
-            stroke="#7FFFD4"
-            strokeWidth="3.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            fill="none"
-          />
-          {/* Pulse dot */}
-          <circle cx="38" cy="8" r="2.5" fill="#7FFFD4" />
-        </svg>
+          W
+        </div>
       </div>
     ),
     { ...size },
