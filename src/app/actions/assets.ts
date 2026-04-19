@@ -147,14 +147,22 @@ export async function addAsset(
   let logoUrl: string | null = input.logo ?? null;
   let profileExchange: string | null = null;
 
+  // Fire the dedup query now (unawaited) so it runs concurrently with the
+  // price fetch below. We use `then` to normalize the PostgrestFilterBuilder
+  // into a plain Promise<{ data: ... }> so the types line up for Promise.all
+  // callers downstream.
   const dedupPromise: Promise<{ data: { id: string }[] | null }> = (() => {
     const q = supabase.from("assets").select("id").limit(1);
     if (input.assetClass === "cash") {
-      return q.eq("asset_class", "cash").eq("native_currency", nativeCurrency);
+      return q
+        .eq("asset_class", "cash")
+        .eq("native_currency", nativeCurrency)
+        .then((r) => ({ data: r.data }));
     } else if (externalId) {
       return q
         .eq("price_source", input.priceSource)
-        .eq("external_id", externalId);
+        .eq("external_id", externalId)
+        .then((r) => ({ data: r.data }));
     }
     // Free-typed row with no canonical id — can't safely dedupe. Skip.
     return Promise.resolve({ data: [] as { id: string }[] });
