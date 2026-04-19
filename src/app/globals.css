@@ -378,3 +378,56 @@
     100% { color: inherit; }
   }
 }
+
+/* ============================================================
+ * marbs.io personal site (light-mode island).
+ * Dark is the product; these styles only scope to the personal
+ * landing / notebook pages.
+ * ========================================================== */
+.marbs-personal { color-scheme: light; }
+
+.prose-notebook { color: #121212; font-size: 17px; line-height: 1.7; }
+.prose-notebook > * + * { margin-top: 1.2em; }
+.prose-notebook h2 {
+  font-family: var(--font-space-grotesk);
+  font-weight: 600;
+  font-size: 22px;
+  letter-spacing: -0.01em;
+  margin-top: 2em;
+}
+.prose-notebook h3 {
+  font-family: var(--font-space-grotesk);
+  font-weight: 600;
+  font-size: 18px;
+  margin-top: 1.8em;
+}
+.prose-notebook a { color: #121212; text-decoration: underline; text-underline-offset: 3px; }
+.prose-notebook a:hover { color: #555; }
+.prose-notebook strong { font-weight: 600; }
+.prose-notebook ul, .prose-notebook ol { padding-left: 1.3em; }
+.prose-notebook ul { list-style: disc; }
+.prose-notebook ol { list-style: decimal; }
+.prose-notebook li + li { margin-top: 0.4em; }
+.prose-notebook blockquote {
+  border-left: 3px solid #d4d4d4;
+  padding-left: 1em;
+  color: #555;
+  font-style: italic;
+}
+.prose-notebook hr { border: none; border-top: 1px solid #d4d4d4; margin: 2.5em 0; }
+.prose-notebook code {
+  background: #ececec;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.9em;
+  font-family: var(--font-geist-mono);
+}
+.prose-notebook pre {
+  background: #1a1a1a;
+  color: #f5f5f5;
+  padding: 1em 1.2em;
+  border-radius: 12px;
+  overflow-x: auto;
+  font-size: 14px;
+}
+.prose-notebook pre code { background: transparent; padding: 0; color: inherit; }
