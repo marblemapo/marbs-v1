@@ -66,9 +66,11 @@ export function NetWorthHero({ rows }: { rows: Row[] }) {
   const rafRef = useRef<number | null>(null);
   const fromRef = useRef(0);
 
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
-    // When there's nothing to total, the render shows "—" so we don't need
-    // to reset display; just skip the animation.
+    // setState calls here drive the rAF-based count-up and the flash flag —
+    // these are animation state transitions, not derivable from props, so
+    // the cascading-render rule doesn't apply.
     if (!anyValue) return;
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
     const from = fromRef.current;
@@ -98,6 +100,7 @@ export function NetWorthHero({ rows }: { rows: Row[] }) {
       window.clearTimeout(flashTimer);
     };
   }, [total, currency, anyValue]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   return (
     <section className="relative flex flex-col gap-2 p-6 rounded-lg bg-surface border border-border overflow-hidden">
