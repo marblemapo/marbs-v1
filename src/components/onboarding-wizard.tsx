@@ -269,8 +269,8 @@ export function OnboardingWizard({
   }
 
   return (
-    <main className="flex flex-1 flex-col items-center px-6">
-      <div className="w-full max-w-[720px] flex flex-col gap-10 py-10">
+    <main className="f3-stage flex-1">
+      <div className="mx-auto w-full max-w-[780px] px-6 flex flex-col gap-10 py-14 f3-fade-in">
         {/* Header */}
         <header className="flex flex-col gap-3">
           <span className="inline-flex self-start items-center gap-1.5 bg-gold-dim text-gold text-[11px] font-semibold px-2.5 py-1 rounded-pill uppercase tracking-wider">
