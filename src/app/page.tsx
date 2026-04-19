@@ -18,7 +18,7 @@ export default async function Home() {
               className="w-1.5 h-1.5 rounded-full bg-[#7FFFD4] f3-pulse"
               style={{ boxShadow: "0 0 10px #7FFFD4" }}
             />
-            0xMARBS···v1
+            Wealth · v1
           </div>
           <nav className="flex items-center gap-6 font-plex text-[12px] font-medium text-text-muted">
             <span className="text-foreground">Home</span>

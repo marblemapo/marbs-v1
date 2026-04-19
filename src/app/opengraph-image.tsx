@@ -1,6 +1,6 @@
 import { ImageResponse } from "next/og";
 
-export const alt = "Marbs — Your net worth, private by default";
+export const alt = "Wealth — Your net worth, private by default";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -85,7 +85,7 @@ export default function OpenGraphImage() {
                   boxShadow: "0 0 16px #7FFFD4",
                 }}
               />
-              Marbs · V1
+              Wealth · v1
             </div>
           </div>
           <div

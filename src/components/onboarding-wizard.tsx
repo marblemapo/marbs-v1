@@ -275,7 +275,7 @@ export function OnboardingWizard({
         <header className="flex flex-col gap-3">
           <span className="inline-flex self-start items-center gap-1.5 bg-gold-dim text-gold text-[11px] font-semibold px-2.5 py-1 rounded-pill uppercase tracking-wider">
             <span className="w-1.5 h-1.5 rounded-full bg-gold pulse-live" />
-            Marbs · onboarding
+            Wealth · onboarding
           </span>
           <h1 className="font-display text-4xl md:text-5xl font-bold leading-none tracking-tight">
             Welcome, <span className="text-gold">{displayName}</span>

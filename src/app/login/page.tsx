@@ -44,7 +44,7 @@ export default function LoginPage() {
               className="w-1.5 h-1.5 rounded-full bg-[#7FFFD4] f3-pulse"
               style={{ boxShadow: "0 0 10px #7FFFD4" }}
             />
-            0xMARBS···v1
+            Wealth · v1
           </div>
           <nav className="flex items-center gap-6 font-plex text-[12px] font-medium text-text-muted">
             <Link href="/" className="hover:text-foreground transition-colors">
@@ -66,7 +66,7 @@ export default function LoginPage() {
         <h1 className="font-sans font-bold text-5xl md:text-[48px] leading-[1.02] tracking-[-0.03em] mb-4">
           Sign in to
           <br />
-          <span className="text-[#7FFFD4]">Marbs.</span>
+          <span className="text-[#7FFFD4]">Wealth.</span>
         </h1>
         <p className="font-plex text-sm text-text-muted max-w-[460px] mb-10">
           {"// enter your email. we'll send a magic link. no password to remember."}
@@ -143,7 +143,7 @@ export default function LoginPage() {
           <div className="font-plex text-[11px] text-text-muted leading-relaxed border-t border-white/[0.08] pt-5 mt-10">
             {"// new here? set your display name from the dashboard once signed in."}
             <br />
-            {"// by signing in, you agree to let Marbs store your asset data in its database. no bank logins, no plaid. entry is manual."}
+            {"// by signing in, you agree to let Wealth store your asset data in its database. no bank logins, no plaid. entry is manual."}
           </div>
         </div>
       </div>

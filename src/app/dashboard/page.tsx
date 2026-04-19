@@ -197,7 +197,7 @@ export default async function DashboardPage() {
               className="w-1.5 h-1.5 rounded-full bg-[#7FFFD4] f3-pulse"
               style={{ boxShadow: "0 0 10px #7FFFD4" }}
             />
-            0xMARBS···v1
+            Wealth · v1
           </div>
           <form action="/auth/signout" method="POST">
             <Button
