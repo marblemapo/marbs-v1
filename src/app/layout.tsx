@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import { Space_Grotesk, Inter, Geist_Mono, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -25,11 +26,22 @@ const ibmPlexMono = IBM_Plex_Mono({
   weight: ["400", "500", "600"],
 });
 
-export const metadata: Metadata = {
-  title: "Wealth — Your net worth, private by default",
-  description:
-    "A beautiful, privacy-first multi-asset net-worth tracker. Stocks, crypto, cash — in one place. No bank logins.",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const h = await headers();
+  const host = (h.get("host") ?? "").toLowerCase();
+  const isWealth = host.startsWith("wealth.");
+  const iconKey = isWealth ? "wealth" : "marbs";
+
+  return {
+    title: "Wealth — Your net worth, private by default",
+    description:
+      "A beautiful, privacy-first multi-asset net-worth tracker. Stocks, crypto, cash — in one place. No bank logins.",
+    icons: {
+      icon: [{ url: `/icons/${iconKey}`, type: "image/png", sizes: "64x64" }],
+      apple: [{ url: `/apple-icons/${iconKey}`, sizes: "180x180" }],
+    },
+  };
+}
 
 export default function RootLayout({
   children,
