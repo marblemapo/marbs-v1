@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { buttonVariants } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { StatCell } from "@/components/f3/stat-cell";
 
 export default async function Home() {
   const supabase = await createClient();
@@ -10,54 +9,91 @@ export default async function Home() {
   } = await supabase.auth.getUser();
 
   return (
-    <main className="flex flex-1 flex-col items-center justify-center px-6">
-      <div className="w-full max-w-[720px] flex flex-col gap-10 py-24">
-        {/* Brand pill */}
-        <span className="inline-flex self-start items-center gap-1.5 bg-gold-dim text-gold text-[11px] font-semibold px-2.5 py-1 rounded-pill uppercase tracking-wider">
-          <span className="w-1.5 h-1.5 rounded-full bg-gold pulse-live" />
-          Marbs v1 · in development
-        </span>
-
-        {/* Hero */}
-        <div className="flex flex-col gap-4">
-          <h1 className="font-display text-5xl md:text-6xl font-bold leading-none tracking-tight">
-            Your net worth,
-            <br />
-            <span className="text-gold">private by default.</span>
-          </h1>
-          <p className="text-lg leading-relaxed text-text-secondary max-w-[560px]">
-            A beautiful multi-asset tracker for stocks, crypto, and cash.
-            No bank logins. No Plaid. Just your numbers.
-          </p>
+    <main className="f3-stage flex-1 flex items-center">
+      <div className="mx-auto w-full max-w-[780px] px-6 py-12 flex flex-col f3-fade-in">
+        {/* Top bar */}
+        <div className="flex items-center justify-between mb-12">
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-pill bg-white/[0.04] border border-white/[0.08] font-plex text-[12px] font-medium text-[#EBEBF5] tracking-wide">
+            <span
+              className="w-1.5 h-1.5 rounded-full bg-[#7FFFD4] f3-pulse"
+              style={{ boxShadow: "0 0 10px #7FFFD4" }}
+            />
+            0xMARBS···v1
+          </div>
+          <nav className="flex items-center gap-6 font-plex text-[12px] font-medium text-text-muted">
+            <span className="text-foreground">Home</span>
+            <a
+              href="https://github.com/marblemapo/marbs-v1"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-foreground transition-colors"
+            >
+              Docs
+            </a>
+            <Link
+              href={user ? "/dashboard" : "/login"}
+              className="hover:text-foreground transition-colors"
+            >
+              {user ? "Dashboard" : "Sign in"}
+            </Link>
+          </nav>
         </div>
 
+        {/* Hero */}
+        <h1 className="font-sans font-bold text-5xl md:text-[48px] leading-[1.02] tracking-[-0.03em] mb-4">
+          Your net worth,
+          <br />
+          <span className="text-[#7FFFD4]">private by default.</span>
+        </h1>
+        <p className="font-plex text-sm text-text-muted max-w-[460px] mb-10">
+          {"// self-custody your numbers. stocks, crypto, cash. no bank logins, no plaid."}
+        </p>
+
         {/* CTA */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-4 mb-12">
           <Link
             href={user ? "/dashboard" : "/login"}
-            className={cn(buttonVariants(), "h-11 px-5 font-semibold")}
+            className="f3-cta"
           >
-            {user ? "Go to dashboard" : "Sign in"}
+            {user ? "Enter vault →" : "Sign in"}
           </Link>
-          <span className="text-xs text-text-muted">
-            {user ? `Signed in as ${user.email}` : "Magic link · no password"}
+          <span className="font-plex text-[12px] text-text-muted">
+            {user ? `signed in as ${user.email}` : "Magic link · no password"}
           </span>
         </div>
 
-        {/* Stats preview — tokens in action */}
-        <div className="grid grid-cols-3 gap-px bg-border rounded-lg overflow-hidden">
-          <div className="bg-surface p-5 flex flex-col gap-1">
-            <div className="text-[11px] text-text-muted uppercase tracking-wider font-medium">Net worth</div>
-            <div className="font-display text-2xl font-bold tabular-nums">$—</div>
-          </div>
-          <div className="bg-surface p-5 flex flex-col gap-1">
-            <div className="text-[11px] text-text-muted uppercase tracking-wider font-medium">Today</div>
-            <div className="font-display text-2xl font-bold tabular-nums text-gain">+$—</div>
-          </div>
-          <div className="bg-surface p-5 flex flex-col gap-1">
-            <div className="text-[11px] text-text-muted uppercase tracking-wider font-medium">Assets</div>
-            <div className="font-display text-2xl font-bold tabular-nums">0</div>
-          </div>
+        {/* Interactive empty-state stats strip */}
+        <div className="grid grid-cols-3 gap-px bg-white/[0.08] rounded-[14px] overflow-hidden">
+          <StatCell
+            label="Net worth"
+            target={2184729.84}
+            prefix="$"
+            decimals={2}
+            cta="Add your first asset"
+            href="/login"
+            emptyDisplay="$—"
+            mountDelay={300}
+          />
+          <StatCell
+            label="Today"
+            target={18429.52}
+            prefix="+$"
+            decimals={2}
+            cta="See live movement"
+            href="/login"
+            positive
+            emptyDisplay="+$—"
+            mountDelay={450}
+          />
+          <StatCell
+            label="Assets"
+            target={12}
+            decimals={0}
+            cta="Start tracking"
+            href="/login"
+            emptyDisplay="0"
+            mountDelay={600}
+          />
         </div>
       </div>
     </main>

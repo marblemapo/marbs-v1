@@ -63,6 +63,11 @@
   --font-display: var(--font-space-grotesk);
   --font-mono: var(--font-geist-mono);
   --font-heading: var(--font-space-grotesk);
+  --font-plex-mono: var(--font-ibm-plex-mono);
+
+  /* F3 — aqua crypto-native accent (scoped: landing + login) */
+  --color-pop: var(--accent-pop);
+  --color-pop-dim: var(--accent-pop-dim);
 
   /* Radii (from DESIGN.md: sm 8, md 12, lg 16, pill 100) */
   --radius-sm: 0.5rem;
@@ -94,6 +99,10 @@
   /* Brand accent */
   --accent-gold: #f5c518;
   --accent-gold-dim: rgba(245, 197, 24, 0.12);
+
+  /* F3 aqua accent (landing/login only — decision to unify: deferred) */
+  --accent-pop: #7fffd4;
+  --accent-pop-dim: rgba(127, 255, 212, 0.12);
 
   /* Semantic */
   --semantic-gain: #00c805;
@@ -156,6 +165,148 @@
   .tabular-nums {
     font-variant-numeric: tabular-nums;
     font-feature-settings: "tnum";
+  }
+}
+
+/* ============================================================
+ * F3 Stage — aqua crypto-native landing surface
+ * Scope: opt-in via <main className="f3-stage">, not global.
+ * ========================================================== */
+@layer utilities {
+  .f3-stage {
+    position: relative;
+    min-height: 100vh;
+    background:
+      radial-gradient(ellipse 80% 55% at 18% 8%, rgba(127, 255, 212, 0.21), transparent 60%),
+      radial-gradient(ellipse 70% 55% at 88% 92%, rgba(127, 255, 212, 0.13), transparent 60%),
+      radial-gradient(circle at 50% 50%, rgba(127, 255, 212, 0.04), transparent 55%),
+      #000;
+    overflow: hidden;
+  }
+  .f3-stage::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      rgba(255, 255, 255, 0.016) 0,
+      rgba(255, 255, 255, 0.016) 1px,
+      transparent 1px,
+      transparent 3px
+    );
+    pointer-events: none;
+    z-index: 0;
+  }
+  .f3-stage > * {
+    position: relative;
+    z-index: 1;
+  }
+  .font-plex {
+    font-family: var(--font-plex-mono), ui-monospace, SFMono-Regular, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+  .f3-card {
+    position: relative;
+    background:
+      linear-gradient(180deg, rgba(127, 255, 212, 0.04) 0%, transparent 60%),
+      #0a0a0a;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 20px;
+    box-shadow:
+      0 0 80px rgba(127, 255, 212, 0.12),
+      0 20px 60px rgba(0, 0, 0, 0.5);
+  }
+  .f3-card::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 20px;
+    padding: 1px;
+    background: linear-gradient(135deg, rgba(127, 255, 212, 0.3), transparent 40%);
+    -webkit-mask:
+      linear-gradient(#000, #000) content-box,
+      linear-gradient(#000, #000);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
+  }
+  .f3-cta {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 32px;
+    color: #7fffd4;
+    font-weight: 600;
+    font-size: 14px;
+    letter-spacing: 0.02em;
+    text-decoration: none;
+    background: rgba(127, 255, 212, 0.04);
+    border-radius: 100px;
+    box-shadow:
+      0 0 32px rgba(127, 255, 212, 0.25),
+      inset 0 0 20px rgba(127, 255, 212, 0.08);
+    transition: box-shadow 0.2s ease-out, background 0.2s ease-out;
+    animation: f3-cta-breathe 4s ease-in-out infinite;
+  }
+  @keyframes f3-cta-breathe {
+    0%, 100% {
+      box-shadow:
+        0 0 28px rgba(127, 255, 212, 0.2),
+        inset 0 0 18px rgba(127, 255, 212, 0.06);
+    }
+    50% {
+      box-shadow:
+        0 0 44px rgba(127, 255, 212, 0.38),
+        inset 0 0 22px rgba(127, 255, 212, 0.12);
+    }
+  }
+  .f3-cta::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 100px;
+    padding: 1px;
+    background: linear-gradient(90deg, #7fffd4, #5fc6af);
+    -webkit-mask:
+      linear-gradient(#000, #000) content-box,
+      linear-gradient(#000, #000);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
+  }
+  .f3-cta:hover {
+    background: rgba(127, 255, 212, 0.08);
+    box-shadow:
+      0 0 48px rgba(127, 255, 212, 0.35),
+      inset 0 0 20px rgba(127, 255, 212, 0.12);
+  }
+  .f3-cta:disabled,
+  .f3-cta[aria-disabled="true"] {
+    opacity: 0.5;
+    pointer-events: none;
+  }
+  .f3-pulse {
+    animation: f3-pulse 2s ease-in-out infinite;
+  }
+  @keyframes f3-pulse {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: 0.4; }
+  }
+  .f3-fade-in {
+    animation: f3-fade-in 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  @keyframes f3-fade-in {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+      filter: blur(4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+      filter: blur(0);
+    }
   }
 }
 
