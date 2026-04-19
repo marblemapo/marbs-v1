@@ -19,7 +19,7 @@ export default function AppleIcon() {
       >
         <div
           style={{
-            fontSize: 88,
+            fontSize: 124,
             fontWeight: 700,
             letterSpacing: "-0.04em",
             lineHeight: 1,
@@ -28,7 +28,7 @@ export default function AppleIcon() {
               "0 0 18px rgba(127,255,212,0.55), 0 0 40px rgba(127,255,212,0.3)",
           }}
         >
-          W
+          m
         </div>
       </div>
     ),
