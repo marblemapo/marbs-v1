@@ -137,7 +137,7 @@ export function AddAssetDrawer({ baseCurrency = "USD" }: { baseCurrency?: string
         + Add asset
       </SheetTrigger>
 
-      <SheetContent side="right" className="w-full sm:max-w-[440px] flex flex-col gap-0 p-0">
+      <SheetContent side="right" className="f3-theme w-full sm:max-w-[440px] flex flex-col gap-0 p-0 border-l border-white/[0.08]">
         <SheetHeader className="p-6 pb-4">
           <SheetTitle className="font-display text-2xl font-bold tracking-tight">
             Add an asset

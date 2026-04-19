@@ -59,9 +59,13 @@ export function CurrencyFlag({
         height: size,
         // Flag emoji glyphs don't fill their font-size box; slight
         // over-sizing lands a nicely-filled flag at the given container
-        // size across macOS/iOS/Android.
+        // size across macOS/iOS/Android. The translateY pulls the glyph
+        // up onto the optical centre — flag emoji baselines sit ~6% low
+        // on most platforms, so they read as "dropped" next to adjacent
+        // text without this nudge.
         fontSize: Math.round(size * 0.95),
         lineHeight: 1,
+        transform: "translateY(-0.06em)",
       }}
       aria-label={`${info.name} flag`}
     >
