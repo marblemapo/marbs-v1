@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
@@ -136,13 +137,28 @@ export async function addAsset(
     }
   }
 
-  // --- Fetch price + logo in parallel ---
-  // Both are external network hops (~300ms each on a warm cache). Running
-  // them sequentially wasted ~1x round trip per add. For 10 onboarding rows
-  // firing in parallel at the server action layer this was compounding.
+  // --- Fetch price + logo + run dedup query in parallel ---
+  // Price fetch, Finnhub profile lookup, and the dedup DB query are all
+  // independent serial hops in the original path. Running them concurrently
+  // cuts ~1 round-trip (~100-300ms) off the critical path on first save.
+  // The dedup query only depends on externalId (already resolved) + the
+  // user's assets table (already scoped by RLS).
   let quote: Quote | null = null;
   let logoUrl: string | null = input.logo ?? null;
   let profileExchange: string | null = null;
+
+  const dedupPromise: Promise<{ data: { id: string }[] | null }> = (() => {
+    const q = supabase.from("assets").select("id").limit(1);
+    if (input.assetClass === "cash") {
+      return q.eq("asset_class", "cash").eq("native_currency", nativeCurrency);
+    } else if (externalId) {
+      return q
+        .eq("price_source", input.priceSource)
+        .eq("external_id", externalId);
+    }
+    // Free-typed row with no canonical id — can't safely dedupe. Skip.
+    return Promise.resolve({ data: [] as { id: string }[] });
+  })();
 
   if (externalId && input.priceSource !== "manual") {
     const [quoteRes, profileRes] = await Promise.all([
@@ -191,27 +207,11 @@ export async function addAsset(
     logoUrl = logoUrl.replace("/thumb/", "/small/");
   }
 
-  // --- Duplicate detection ---
-  // If the user already owns this asset, we add to the existing position
-  // rather than creating a second row. Two matching rules:
-  //   - Stocks/ETFs/crypto: same price_source + same external_id. Symbol
-  //     alone isn't enough (e.g. TSLA vs TSLA.L are different assets).
-  //   - Cash: same asset_class=cash + same native_currency. A user can have
-  //     multiple USD accounts but the "cash in USD" tracked here sums up —
-  //     consistent with how we already default the name to "US Dollar".
-  //
-  // RLS scopes the lookup to the current user automatically.
+  // --- Duplicate detection result ---
+  // Collect the dedup query we kicked off in parallel above.
   let existingAssetId: string | null = null;
   {
-    const q = supabase.from("assets").select("id").limit(1);
-    if (input.assetClass === "cash") {
-      q.eq("asset_class", "cash").eq("native_currency", nativeCurrency);
-    } else if (externalId) {
-      q.eq("price_source", input.priceSource).eq("external_id", externalId);
-    } else {
-      // Free-typed row with no canonical id — can't safely dedupe. New row.
-    }
-    const { data: matches } = await q;
+    const { data: matches } = await dedupPromise;
     if (matches && matches.length > 0) {
       existingAssetId = matches[0].id;
     }
@@ -285,20 +285,25 @@ export async function addAsset(
   }
 
   // --- Cache the price (service role — price_cache is public-read only) ---
+  // Moved off the critical path via after(): the response returns as soon as
+  // the asset + snapshot are written, and the cache upsert runs post-response.
+  // Dashboard has its own 10-minute TTL refresh, so a missed cache write here
+  // is harmless — the next dashboard load refetches anyway.
   if (quote && externalId) {
-    const admin = createAdminClient();
-    const { error: cacheErr } = await admin.from("price_cache").upsert(
-      {
-        external_id: externalId,
-        source: input.priceSource,
-        price_native: quote.price,
-        currency: quote.currency,
-        fetched_at: quote.asOf,
-      },
-      { onConflict: "external_id,source" },
-    );
-    // Non-fatal — we have the asset + snapshot. UI will fetch price next render.
-    if (cacheErr) console.error("price_cache upsert:", cacheErr.message);
+    const priceToCache = {
+      external_id: externalId,
+      source: input.priceSource,
+      price_native: quote.price,
+      currency: quote.currency,
+      fetched_at: quote.asOf,
+    };
+    after(async () => {
+      const admin = createAdminClient();
+      const { error: cacheErr } = await admin
+        .from("price_cache")
+        .upsert(priceToCache, { onConflict: "external_id,source" });
+      if (cacheErr) console.error("price_cache upsert:", cacheErr.message);
+    });
   }
 
   revalidatePath("/dashboard");
