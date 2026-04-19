@@ -182,6 +182,25 @@
       radial-gradient(circle at 50% 50%, rgba(127, 255, 212, 0.04), transparent 55%),
       #000;
     overflow: hidden;
+    /* Retheme shadcn + Marbs tokens so existing components (Button, Input,
+       bg-gold, text-gold etc.) render with F3 aqua inside the stage. */
+    --background: #000000;
+    --foreground: #FFFFFF;
+    --surface: #0A0A0A;
+    --surface-hover: #141414;
+    --border: rgba(255, 255, 255, 0.08);
+    --border-strong: rgba(127, 255, 212, 0.18);
+    --input: rgba(255, 255, 255, 0.12);
+    --accent-gold: #7FFFD4;
+    --accent-gold-dim: rgba(127, 255, 212, 0.12);
+    --primary: #7FFFD4;
+    --primary-foreground: #000000;
+    --secondary: #0A0A0A;
+    --card: #0A0A0A;
+    --popover: #0A0A0A;
+    --muted: #0A0A0A;
+    --accent: #141414;
+    --ring: rgba(127, 255, 212, 0.5);
   }
   .f3-stage::before {
     content: "";

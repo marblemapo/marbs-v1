@@ -9,12 +9,9 @@ import { NetWorthHero } from "@/components/networth-hero";
 import { CurrencyProvider } from "@/components/currency-context";
 import { fetchFxRates, convertFx } from "@/lib/fx";
 import { fetchPrice } from "@/lib/prices";
-import { cn } from "@/lib/utils";
 
-// Re-fetch any price_cache row older than this on dashboard load.
-const PRICE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+const PRICE_TTL_MS = 10 * 60 * 1000;
 
-// Force dynamic — this page always reads live user + asset data.
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
@@ -24,7 +21,6 @@ export default async function DashboardPage() {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  // Profile (base currency, display name).
   const { data: profile } = await supabase
     .from("profiles")
     .select("display_name, base_currency, created_at")
@@ -33,9 +29,6 @@ export default async function DashboardPage() {
 
   const baseCurrency = profile?.base_currency ?? "USD";
 
-  // Assets with latest balance + cached price.
-  // Single query: assets LEFT JOIN latest snapshot per asset + price_cache.
-  // For simplicity we fetch separately and stitch — small N for v1.
   const { data: assets } = await supabase
     .from("assets")
     .select(
@@ -45,10 +38,6 @@ export default async function DashboardPage() {
 
   const assetIds = (assets ?? []).map((a) => a.id);
 
-  // Pull the latest quantity per asset via a window-function-style query.
-  // Supabase doesn't let us do window fns in PostgREST, so fetch all
-  // snapshots and pick latest client-side. For v1 (handful of assets) this
-  // is fine; optimize later with a DB view if it gets slow.
   const { data: snapshots } = assetIds.length
     ? await supabase
         .from("balance_snapshots")
@@ -64,7 +53,6 @@ export default async function DashboardPage() {
     }
   }
 
-  // Price cache lookup (public-read, so user session can read it).
   const priceKeys = (assets ?? [])
     .filter((a) => a.external_id && a.price_source !== "manual")
     .map((a) => ({ external_id: a.external_id!, source: a.price_source }));
@@ -86,8 +74,6 @@ export default async function DashboardPage() {
     }
   }
 
-  // Refresh any price whose cache is missing or older than PRICE_TTL_MS.
-  // Done in parallel; failures fall back to the stale cached value.
   const now = Date.now();
   const toRefresh = (assets ?? []).filter((a) => {
     if (!a.external_id || a.price_source === "manual") return false;
@@ -155,16 +141,11 @@ export default async function DashboardPage() {
     };
   });
 
-  // Fetch FX rates for every currency present in the holdings plus the base.
-  // fetchFxRates always returns base as 1, others relative to base. Cached 6h.
   const currencySet = new Set<string>([baseCurrency]);
   for (const r of rows) currencySet.add(r.native_currency);
   const currencies = Array.from(currencySet);
   const fxRates = await fetchFxRates(baseCurrency, currencies);
 
-  // Sort by base-currency-equivalent value, most valuable first. Rows with
-  // no price / no FX (null value) slide to the bottom so the list still
-  // puts real money at the top.
   const baseValue = (r: (typeof rows)[number]): number | null => {
     if (r.value_native == null) return null;
     if (r.native_currency === baseCurrency) return r.value_native;
@@ -175,39 +156,51 @@ export default async function DashboardPage() {
     const av = baseValue(a);
     const bv = baseValue(b);
     if (av == null && bv == null) return 0;
-    if (av == null) return 1; // nulls last
+    if (av == null) return 1;
     if (bv == null) return -1;
     return bv - av;
   });
 
   return (
-    <main className="flex flex-1 flex-col items-center px-6">
-      <div className="w-full max-w-[720px] flex flex-col gap-10 py-10">
-        {/* Header */}
-        <header className="flex items-start justify-between gap-4">
-          <div className="flex flex-col gap-1.5">
-            <span className="text-[11px] text-text-muted uppercase tracking-wider font-medium">
-              Dashboard
-            </span>
-            <div className="flex items-baseline gap-2 flex-wrap">
-              <span className="font-display text-3xl font-bold leading-none tracking-tight">
-                Hello,
-              </span>
-              <DisplayNameEditor
-                initial={profile?.display_name ?? null}
-                fallback={user.email?.split("@")[0] ?? user.email ?? "friend"}
-              />
-            </div>
+    <main className="f3-stage flex-1">
+      <div className="mx-auto w-full max-w-[780px] px-6 pt-14 pb-24 flex flex-col gap-10 f3-fade-in">
+        {/* Top bar — matches landing/login */}
+        <div className="flex items-center justify-between">
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-pill bg-white/[0.04] border border-white/[0.08] font-plex text-[12px] font-medium text-[#EBEBF5] tracking-wide">
+            <span
+              className="w-1.5 h-1.5 rounded-full bg-[#7FFFD4] f3-pulse"
+              style={{ boxShadow: "0 0 10px #7FFFD4" }}
+            />
+            0xMARBS···v1
           </div>
           <form action="/auth/signout" method="POST">
-            <Button type="submit" variant="ghost" size="sm" className="font-medium">
+            <Button
+              type="submit"
+              variant="ghost"
+              size="sm"
+              className="font-plex text-[12px] font-medium text-text-muted hover:text-foreground hover:bg-transparent"
+            >
               Sign out
             </Button>
           </form>
+        </div>
+
+        {/* Greeting header */}
+        <header className="flex flex-col gap-2">
+          <span className="font-plex text-[11px] text-text-muted uppercase tracking-[0.14em] font-medium">
+            Dashboard
+          </span>
+          <div className="flex items-baseline gap-2 flex-wrap">
+            <span className="font-sans text-4xl font-bold leading-none tracking-[-0.025em]">
+              Hello,
+            </span>
+            <DisplayNameEditor
+              initial={profile?.display_name ?? null}
+              fallback={user.email?.split("@")[0] ?? user.email ?? "friend"}
+            />
+          </div>
         </header>
 
-        {/* Everything below shares currency state via CurrencyProvider so
-            the hero pill toggle also re-renders asset row values. */}
         <CurrencyProvider
           baseCurrency={baseCurrency}
           currencies={currencies}
@@ -220,45 +213,38 @@ export default async function DashboardPage() {
             }))}
           />
 
-        {/* Assets list */}
-        <section className="flex flex-col gap-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-[11px] text-text-muted uppercase tracking-wider font-medium">
-              Assets
-            </h2>
-            <AddAssetDrawer baseCurrency={baseCurrency} />
-          </div>
-
-          {rowsWithValue.length === 0 ? (
-            <div className="p-8 rounded-lg bg-surface border border-border flex flex-col items-center gap-4 text-center">
-              <div className="flex flex-col gap-1">
-                <div className="font-display text-lg font-bold">
-                  No holdings yet
-                </div>
-                <div className="text-sm text-text-secondary max-w-[380px]">
-                  Add everything in one pass — stocks, crypto, cash — and see
-                  your net worth in about three minutes.
-                </div>
-              </div>
-              <a
-                href="/onboarding"
-                className={cn(
-                  "inline-flex items-center gap-2 h-11 px-5 rounded-lg font-semibold text-sm transition-colors",
-                  "bg-primary text-primary-foreground hover:bg-primary/80",
-                )}
-              >
-                Log my holdings →
-              </a>
-              <div className="text-xs text-text-muted">
-                Prefer one at a time? Use the{" "}
-                <span className="text-foreground font-medium">+ Add asset</span>{" "}
-                button above.
-              </div>
+          <section className="flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <h2 className="font-plex text-[11px] text-text-muted uppercase tracking-[0.14em] font-medium">
+                Assets
+              </h2>
+              <AddAssetDrawer baseCurrency={baseCurrency} />
             </div>
-          ) : (
-            <AssetsList rows={rowsWithValue} />
-          )}
-        </section>
+
+            {rowsWithValue.length === 0 ? (
+              <div className="f3-card p-8 flex flex-col items-center gap-4 text-center">
+                <div className="flex flex-col gap-1">
+                  <div className="font-sans text-lg font-bold">
+                    No holdings yet
+                  </div>
+                  <div className="text-sm text-text-secondary max-w-[380px]">
+                    Add everything in one pass — stocks, crypto, cash — and see
+                    your net worth in about three minutes.
+                  </div>
+                </div>
+                <a href="/onboarding" className="f3-cta">
+                  Log my holdings →
+                </a>
+                <div className="font-plex text-xs text-text-muted">
+                  Prefer one at a time? Use the{" "}
+                  <span className="text-[#7FFFD4] font-medium">+ Add asset</span>{" "}
+                  button above.
+                </div>
+              </div>
+            ) : (
+              <AssetsList rows={rowsWithValue} />
+            )}
+          </section>
         </CurrencyProvider>
       </div>
     </main>
