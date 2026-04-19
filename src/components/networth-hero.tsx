@@ -23,14 +23,19 @@ function formatMoney(value: number, currency: string) {
 }
 
 /**
- * Net-worth hero with a currency pill toggle. State lives in CurrencyContext
- * so the asset list can re-render its row values in the selected currency too.
+ * Dashboard hero — net worth is the headline, TODAY + ASSETS stack as a
+ * smaller sub-row below (matches the landing's 3-cell visual hierarchy but
+ * with the net-worth cell promoted to hero scale).
+ *
+ * Today delta is deferred to a follow-up pass: we need price snapshots over
+ * time to compute it, and the price_cache table only stores latest. For now
+ * it renders as "—" with a subtle "tracking soon" label so the layout stays
+ * intact and the slot is reserved.
  *
  * Liveness:
- *   - Counts up from 0 → total on mount (ease-out cubic, 900ms)
- *   - Re-animates whenever `total` or `currency` changes (from → to)
- *   - Pulsing aqua "LIVE" dot beside the eyebrow label
- *   - Subtle tick flash on the number when the target shifts
+ *   - Count-up from 0 → total on mount (ease-out cubic, 900ms)
+ *   - Re-animates on currency switch
+ *   - Pulsing aqua LIVE dot + subtle flash on the number when target shifts
  */
 export function NetWorthHero({ rows }: { rows: Row[] }) {
   const { currency, setCurrency, currencies, fxRates } = useCurrency();
@@ -59,8 +64,15 @@ export function NetWorthHero({ rows }: { rows: Row[] }) {
   }, [rows, currency, fxRates]);
 
   const anyValue = rows.some((r) => r.value_native != null);
+  const assetsWithValue = rows.filter((r) => r.value_native != null).length;
 
-  // --- Animated counter ---
+  // Classify assets for the sub-row caption (e.g. "across 3 classes")
+  const nativeCcySet = useMemo(() => {
+    const s = new Set<string>();
+    for (const r of rows) s.add(r.native_currency);
+    return s;
+  }, [rows]);
+
   const [display, setDisplay] = useState(0);
   const [flash, setFlash] = useState(false);
   const rafRef = useRef<number | null>(null);
@@ -68,9 +80,6 @@ export function NetWorthHero({ rows }: { rows: Row[] }) {
 
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
-    // setState calls here drive the rAF-based count-up and the flash flag —
-    // these are animation state transitions, not derivable from props, so
-    // the cascading-render rule doesn't apply.
     if (!anyValue) return;
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
     const from = fromRef.current;
@@ -103,39 +112,39 @@ export function NetWorthHero({ rows }: { rows: Row[] }) {
   /* eslint-enable react-hooks/set-state-in-effect */
 
   return (
-    <section className="relative flex flex-col gap-2 p-6 rounded-lg bg-surface border border-border overflow-hidden">
-      {/* Subtle aqua ambient glow on the card */}
+    <section className="relative flex flex-col gap-6 p-7 rounded-2xl bg-[#0A0A0A] border border-white/[0.08] overflow-hidden">
+      {/* Ambient aqua bloom in the top-left corner */}
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-0 opacity-60"
+        className="pointer-events-none absolute inset-0"
         style={{
           background:
-            "radial-gradient(circle at 0% 0%, rgba(127,255,212,0.08), transparent 60%)",
+            "radial-gradient(circle at 0% 0%, rgba(127,255,212,0.1), transparent 55%)",
         }}
       />
 
-      {/* Top row: label + currency pills */}
+      {/* --- Eyebrow row: live label + currency pills --- */}
       <div className="relative flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2">
           <span
             className="w-1.5 h-1.5 rounded-full bg-[#7FFFD4] f3-pulse"
-            style={{ boxShadow: "0 0 8px #7FFFD4" }}
+            style={{ boxShadow: "0 0 10px #7FFFD4" }}
           />
-          <span className="font-plex text-[11px] text-text-muted uppercase tracking-[0.14em] font-medium">
-            Net worth · {currency} · live
+          <span className="font-plex text-[11px] text-text-muted uppercase tracking-[0.18em] font-medium">
+            Net worth · live
           </span>
         </div>
         {currencies.length > 1 && (
-          <div className="flex items-center gap-1 p-0.5 rounded-pill bg-background/50 border border-border">
+          <div className="flex items-center gap-1 p-0.5 rounded-pill bg-black/40 border border-white/[0.08]">
             {currencies.map((c) => (
               <button
                 key={c}
                 type="button"
                 onClick={() => setCurrency(c)}
                 className={cn(
-                  "h-6 px-2.5 rounded-pill text-[11px] font-semibold transition-colors",
+                  "h-6 px-2.5 rounded-pill text-[11px] font-semibold font-plex transition-colors",
                   c === currency
-                    ? "bg-gold text-primary-foreground"
+                    ? "bg-[#7FFFD4] text-black"
                     : "text-text-secondary hover:text-foreground",
                 )}
               >
@@ -146,39 +155,64 @@ export function NetWorthHero({ rows }: { rows: Row[] }) {
         )}
       </div>
 
-      {/* Big number — animated + flash on change */}
-      <div
-        className={cn(
-          "relative font-display text-5xl font-bold tabular-nums transition-colors duration-300",
-          flash ? "text-[#7FFFD4]" : "text-foreground",
+      {/* --- Hero number: huge, animated --- */}
+      <div className="relative flex flex-col gap-1">
+        <div
+          className={cn(
+            "font-display font-bold tabular-nums leading-none tracking-[-0.035em]",
+            "text-[44px] sm:text-[64px] md:text-[76px]",
+            flash ? "text-[#7FFFD4]" : "text-foreground",
+          )}
+          style={{
+            textShadow: flash ? "0 0 36px rgba(127,255,212,0.45)" : "none",
+            transition: "color 300ms ease-out, text-shadow 300ms ease-out",
+          }}
+        >
+          {anyValue ? formatMoney(display, currency) : "—"}
+        </div>
+        {!anyValue && (
+          <div className="mt-2 text-sm text-text-muted">
+            Add your first asset to see your net worth.
+          </div>
         )}
-        style={{
-          textShadow: flash ? "0 0 24px rgba(127,255,212,0.4)" : "none",
-          transition: "color 300ms ease-out, text-shadow 300ms ease-out",
-        }}
-      >
-        {anyValue ? formatMoney(display, currency) : "—"}
       </div>
 
-      {/* Status line */}
-      <div className="relative text-sm text-text-muted">
-        {!anyValue ? (
-          "Add your first asset to see your net worth."
-        ) : skipped > 0 ? (
-          <>
-            Excludes {skipped} asset{skipped === 1 ? "" : "s"} — no FX rate
-            available.
-          </>
-        ) : (
-          <>
-            Across {rows.filter((r) => r.value_native != null).length} asset
-            {rows.length === 1 ? "" : "s"}
-            {fxRates && currencies.length > 1
-              ? " · converted at daily ECB rate"
-              : ""}
-          </>
-        )}
-      </div>
+      {/* --- Sub-row: TODAY + ASSETS, smaller display --- */}
+      {anyValue && (
+        <div className="relative grid grid-cols-2 gap-px bg-white/[0.08] rounded-xl overflow-hidden">
+          {/* TODAY */}
+          <div className="bg-[#0A0A0A] p-5 flex flex-col gap-1.5">
+            <div className="font-plex text-[11px] text-text-muted uppercase tracking-[0.14em] font-medium">
+              Today
+            </div>
+            <div className="font-display text-2xl font-bold tabular-nums text-text-muted">
+              —
+            </div>
+            <div className="font-plex text-[11px] text-text-muted/70">
+              Tracking live · daily delta soon
+            </div>
+          </div>
+
+          {/* ASSETS */}
+          <div className="bg-[#0A0A0A] p-5 flex flex-col gap-1.5">
+            <div className="font-plex text-[11px] text-text-muted uppercase tracking-[0.14em] font-medium">
+              Assets
+            </div>
+            <div className="font-display text-2xl font-bold tabular-nums">
+              {assetsWithValue}
+            </div>
+            <div className="font-plex text-[11px] text-text-muted/70">
+              across {nativeCcySet.size} currenc
+              {nativeCcySet.size === 1 ? "y" : "ies"}
+              {skipped > 0
+                ? ` · ${skipped} without FX`
+                : fxRates && currencies.length > 1
+                  ? " · daily ECB rate"
+                  : ""}
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
