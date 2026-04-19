@@ -9,6 +9,9 @@
 export type Quote = {
   symbol: string;
   price: number;
+  /** Price ~24h ago in the same currency. Used to compute daily delta.
+      null when the provider doesn't give us history cheaply (e.g. manual). */
+  previousClose: number | null;
   currency: string;
   source: "yahoo" | "coingecko" | "finnhub" | "manual";
   asOf: string; // ISO timestamp
@@ -97,9 +100,14 @@ export async function fetchFinnhubQuote(symbol: string): Promise<Quote | null> {
     const data = await res.json();
     const price = typeof data?.c === "number" ? data.c : null;
     if (!price) return null;
+    // Finnhub /quote includes `pc` (previous close) in the same response —
+    // free 24h-ago price with zero extra network calls.
+    const previousClose =
+      typeof data?.pc === "number" && data.pc > 0 ? data.pc : null;
     return {
       symbol,
       price,
+      previousClose,
       currency: inferCurrencyFromTicker(symbol),
       source: "finnhub",
       asOf: data?.t
@@ -156,9 +164,12 @@ export async function searchYahooSymbol(query: string): Promise<string | null> {
  * Caveat: unofficial API, can change without notice.
  */
 export async function fetchYahooQuote(symbol: string): Promise<Quote | null> {
+  // Range=5d gets us a few trading days of closes so we can pick the
+  // previous session's close for the TODAY delta. Weekends + holidays make
+  // "exactly 24h ago" ambiguous — previous-close is the industry convention.
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(
     symbol,
-  )}?interval=1d&range=1d`;
+  )}?interval=1d&range=5d`;
 
   try {
     const res = await fetch(url, {
@@ -168,21 +179,48 @@ export async function fetchYahooQuote(symbol: string): Promise<Quote | null> {
     if (!res.ok) return null;
 
     const data = await res.json();
-    const meta = data?.chart?.result?.[0]?.meta;
+    const result = data?.chart?.result?.[0];
+    const meta = result?.meta;
     if (!meta || typeof meta.regularMarketPrice !== "number") return null;
 
     let price = meta.regularMarketPrice;
     let currency: string = meta.currency;
 
+    // Prefer the canonical `chartPreviousClose` / `previousClose` from meta.
+    // Fall back to the penultimate daily close bar if meta lacks it.
+    let previousClose: number | null =
+      typeof meta.chartPreviousClose === "number"
+        ? meta.chartPreviousClose
+        : typeof meta.previousClose === "number"
+          ? meta.previousClose
+          : null;
+
+    if (previousClose == null) {
+      const closes: (number | null)[] | undefined =
+        result?.indicators?.quote?.[0]?.close;
+      if (Array.isArray(closes) && closes.length >= 2) {
+        // Walk back from the penultimate close to skip nulls (holidays/gaps).
+        for (let i = closes.length - 2; i >= 0; i--) {
+          const c = closes[i];
+          if (typeof c === "number" && c > 0) {
+            previousClose = c;
+            break;
+          }
+        }
+      }
+    }
+
     // Yahoo returns UK pence (GBp) for LSE listings — normalize to GBP.
     if (currency === "GBp") {
       price = price / 100;
+      if (previousClose != null) previousClose = previousClose / 100;
       currency = "GBP";
     }
 
     return {
       symbol,
       price,
+      previousClose,
       currency,
       source: "yahoo",
       asOf: new Date().toISOString(),
@@ -201,21 +239,32 @@ export async function fetchCoinGeckoQuote(
   coinId: string,
   vsCurrency: string = "usd",
 ): Promise<Quote | null> {
+  const vc = vsCurrency.toLowerCase();
+  // include_24hr_change gives us the percent delta in the same response —
+  // we derive the 24h-ago price as current / (1 + change/100). Zero extra
+  // network calls over the simple-price endpoint.
   const url = `https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(
     coinId,
-  )}&vs_currencies=${encodeURIComponent(vsCurrency.toLowerCase())}`;
+  )}&vs_currencies=${encodeURIComponent(vc)}&include_24hr_change=true`;
 
   try {
     const res = await fetch(url, { next: { revalidate: 60 } });
     if (!res.ok) return null;
 
     const data = await res.json();
-    const price = data?.[coinId]?.[vsCurrency.toLowerCase()];
+    const price = data?.[coinId]?.[vc];
     if (typeof price !== "number") return null;
+
+    const pctChange = data?.[coinId]?.[`${vc}_24h_change`];
+    const previousClose =
+      typeof pctChange === "number"
+        ? price / (1 + pctChange / 100)
+        : null;
 
     return {
       symbol: coinId,
       price,
+      previousClose,
       currency: vsCurrency.toUpperCase(),
       source: "coingecko",
       asOf: new Date().toISOString(),
@@ -241,6 +290,7 @@ export async function fetchPrice(
     return {
       symbol: externalId ?? "CASH",
       price: 1,
+      previousClose: 1,
       currency: nativeCurrency.toUpperCase(),
       source: "manual",
       asOf: new Date().toISOString(),

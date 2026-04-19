@@ -8,6 +8,8 @@ import { useCurrency } from "@/components/currency-context";
 type Row = {
   native_currency: string;
   value_native: number | null;
+  /** value ~24h ago in the same native currency, if the provider had prev close */
+  previous_value_native: number | null;
 };
 
 function formatMoney(value: number, currency: string) {
@@ -19,6 +21,21 @@ function formatMoney(value: number, currency: string) {
     }).format(value);
   } catch {
     return `${currency} ${value.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
+  }
+}
+
+function formatDelta(value: number, currency: string) {
+  const sign = value >= 0 ? "+" : "−";
+  const abs = Math.abs(value);
+  try {
+    const s = new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency,
+      maximumFractionDigits: abs < 10 ? 2 : 0,
+    }).format(abs);
+    return `${sign}${s}`;
+  } catch {
+    return `${sign}${currency} ${abs.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
   }
 }
 
@@ -40,28 +57,52 @@ function formatMoney(value: number, currency: string) {
 export function NetWorthHero({ rows }: { rows: Row[] }) {
   const { currency, setCurrency, currencies, fxRates } = useCurrency();
 
-  const { total, skipped } = useMemo(() => {
+  const { total, previousTotal, hasPrevious, skipped } = useMemo(() => {
     let total = 0;
+    let previousTotal = 0;
+    let hasPrevious = false;
     let skipped = 0;
     for (const r of rows) {
       if (r.value_native == null) continue;
+      // Current value
+      let cur: number | null = null;
       if (r.native_currency === currency) {
-        total += r.value_native;
-        continue;
+        cur = r.value_native;
+      } else if (fxRates) {
+        cur = convertFx(r.value_native, r.native_currency, currency, fxRates);
       }
-      if (!fxRates) {
+      if (cur == null) {
         skipped++;
         continue;
       }
-      const c = convertFx(r.value_native, r.native_currency, currency, fxRates);
-      if (c == null) {
-        skipped++;
-        continue;
+      total += cur;
+      // Previous value (only counts into delta if *every* priced asset has it)
+      if (r.previous_value_native != null) {
+        if (r.native_currency === currency) {
+          previousTotal += r.previous_value_native;
+          hasPrevious = true;
+        } else if (fxRates) {
+          const p = convertFx(
+            r.previous_value_native,
+            r.native_currency,
+            currency,
+            fxRates,
+          );
+          if (p != null) {
+            previousTotal += p;
+            hasPrevious = true;
+          }
+        }
       }
-      total += c;
     }
-    return { total, skipped };
+    return { total, previousTotal, hasPrevious, skipped };
   }, [rows, currency, fxRates]);
+
+  const deltaValue = hasPrevious ? total - previousTotal : null;
+  const deltaPct =
+    hasPrevious && previousTotal > 0
+      ? ((total - previousTotal) / previousTotal) * 100
+      : null;
 
   const anyValue = rows.some((r) => r.value_native != null);
   const assetsWithValue = rows.filter((r) => r.value_native != null).length;
@@ -159,12 +200,12 @@ export function NetWorthHero({ rows }: { rows: Row[] }) {
       <div className="relative flex flex-col gap-1">
         <div
           className={cn(
-            "font-display font-bold tabular-nums leading-none tracking-[-0.035em]",
-            "text-[44px] sm:text-[64px] md:text-[76px]",
+            "font-display font-bold tabular-nums leading-none tracking-[-0.03em]",
+            "text-[32px] sm:text-[40px] md:text-[48px]",
             flash ? "text-[#7FFFD4]" : "text-foreground",
           )}
           style={{
-            textShadow: flash ? "0 0 36px rgba(127,255,212,0.45)" : "none",
+            textShadow: flash ? "0 0 24px rgba(127,255,212,0.4)" : "none",
             transition: "color 300ms ease-out, text-shadow 300ms ease-out",
           }}
         >
@@ -185,11 +226,24 @@ export function NetWorthHero({ rows }: { rows: Row[] }) {
             <div className="font-plex text-[11px] text-text-muted uppercase tracking-[0.14em] font-medium">
               Today
             </div>
-            <div className="font-display text-2xl font-bold tabular-nums text-text-muted">
-              —
+            <div
+              className={cn(
+                "font-display text-xl font-bold tabular-nums",
+                deltaValue == null
+                  ? "text-text-muted"
+                  : deltaValue >= 0
+                    ? "text-[#00C805]"
+                    : "text-[#FF5000]",
+              )}
+            >
+              {deltaValue == null
+                ? "—"
+                : formatDelta(deltaValue, currency)}
             </div>
             <div className="font-plex text-[11px] text-text-muted/70">
-              Tracking live · daily delta soon
+              {deltaPct == null
+                ? "Backfilling · check back shortly"
+                : `${deltaPct >= 0 ? "+" : ""}${deltaPct.toFixed(2)}% since prev close`}
             </div>
           </div>
 
@@ -198,7 +252,7 @@ export function NetWorthHero({ rows }: { rows: Row[] }) {
             <div className="font-plex text-[11px] text-text-muted uppercase tracking-[0.14em] font-medium">
               Assets
             </div>
-            <div className="font-display text-2xl font-bold tabular-nums">
+            <div className="font-display text-xl font-bold tabular-nums">
               {assetsWithValue}
             </div>
             <div className="font-plex text-[11px] text-text-muted/70">

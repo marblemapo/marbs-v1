@@ -58,11 +58,12 @@ export default async function DashboardPage() {
     .map((a) => ({ external_id: a.external_id!, source: a.price_source }));
 
   const priceByKey = new Map<string, number>();
+  const previousByKey = new Map<string, number>();
   const fetchedAtByKey = new Map<string, number>();
   if (priceKeys.length) {
     const { data: prices } = await supabase
       .from("price_cache")
-      .select("external_id, source, price_native, fetched_at")
+      .select("external_id, source, price_native, previous_native, fetched_at")
       .in(
         "external_id",
         priceKeys.map((k) => k.external_id),
@@ -70,6 +71,9 @@ export default async function DashboardPage() {
     for (const p of prices ?? []) {
       const key = `${p.external_id}|${p.source}`;
       priceByKey.set(key, Number(p.price_native));
+      if (p.previous_native != null) {
+        previousByKey.set(key, Number(p.previous_native));
+      }
       if (p.fetched_at) fetchedAtByKey.set(key, new Date(p.fetched_at).getTime());
     }
   }
@@ -79,7 +83,13 @@ export default async function DashboardPage() {
     if (!a.external_id || a.price_source === "manual") return false;
     const key = `${a.external_id}|${a.price_source}`;
     const fetchedAt = fetchedAtByKey.get(key);
-    return fetchedAt == null || now - fetchedAt > PRICE_TTL_MS;
+    // Refresh if stale OR if previous_native is missing (backfill path for
+    // rows cached before the TODAY-delta feature shipped).
+    return (
+      fetchedAt == null ||
+      now - fetchedAt > PRICE_TTL_MS ||
+      !previousByKey.has(key)
+    );
   });
 
   if (toRefresh.length) {
@@ -99,6 +109,9 @@ export default async function DashboardPage() {
     for (const { asset, quote } of upserts) {
       const key = `${asset.external_id}|${asset.price_source}`;
       priceByKey.set(key, quote.price);
+      if (quote.previousClose != null) {
+        previousByKey.set(key, quote.previousClose);
+      }
     }
     if (upserts.length) {
       await admin.from("price_cache").upsert(
@@ -106,6 +119,7 @@ export default async function DashboardPage() {
           external_id: asset.external_id!,
           source: asset.price_source,
           price_native: quote.price,
+          previous_native: quote.previousClose,
           currency: quote.currency,
           fetched_at: quote.asOf,
         })),
@@ -114,10 +128,18 @@ export default async function DashboardPage() {
     }
   }
 
-  const rows: AssetListRow[] = (assets ?? []).map((a) => {
+  const rows: (AssetListRow & { previous_value_native: number | null })[] = (
+    assets ?? []
+  ).map((a) => {
     const latest_quantity = latestByAsset.get(a.id) ?? null;
+    const key = a.external_id ? `${a.external_id}|${a.price_source}` : null;
     const latest_price = a.external_id
-      ? priceByKey.get(`${a.external_id}|${a.price_source}`) ?? null
+      ? priceByKey.get(key!) ?? null
+      : a.price_source === "manual"
+        ? 1
+        : null;
+    const previous_price = a.external_id
+      ? previousByKey.get(key!) ?? null
       : a.price_source === "manual"
         ? 1
         : null;
@@ -137,6 +159,10 @@ export default async function DashboardPage() {
       value_native:
         latest_quantity != null && latest_price != null
           ? latest_quantity * latest_price
+          : null,
+      previous_value_native:
+        latest_quantity != null && previous_price != null
+          ? latest_quantity * previous_price
           : null,
     };
   });
@@ -210,6 +236,7 @@ export default async function DashboardPage() {
             rows={rowsWithValue.map((r) => ({
               native_currency: r.native_currency,
               value_native: r.value_native,
+              previous_value_native: r.previous_value_native,
             }))}
           />
 

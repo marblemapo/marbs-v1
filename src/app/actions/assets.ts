@@ -303,6 +303,7 @@ export async function addAsset(
       external_id: externalId,
       source: input.priceSource,
       price_native: quote.price,
+      previous_native: quote.previousClose,
       currency: quote.currency,
       fetched_at: quote.asOf,
     };
