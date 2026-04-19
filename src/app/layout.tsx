@@ -26,7 +26,7 @@ const ibmPlexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Marbs — Your net worth, private by default",
+  title: "Wealth — Your net worth, private by default",
   description:
     "A beautiful, privacy-first multi-asset net-worth tracker. Stocks, crypto, cash — in one place. No bank logins.",
 };
