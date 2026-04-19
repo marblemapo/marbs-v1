@@ -67,10 +67,9 @@ export function NetWorthHero({ rows }: { rows: Row[] }) {
   const fromRef = useRef(0);
 
   useEffect(() => {
-    if (!anyValue) {
-      setDisplay(0);
-      return;
-    }
+    // When there's nothing to total, the render shows "—" so we don't need
+    // to reset display; just skip the animation.
+    if (!anyValue) return;
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
     const from = fromRef.current;
     const to = total;
