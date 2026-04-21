@@ -44,3 +44,4 @@ next-env.d.ts
 # supabase CLI cache
 supabase/.temp/
 supabase/.branches/
+.claude/scheduled_tasks.lock
