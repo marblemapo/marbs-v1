@@ -164,7 +164,7 @@ export function AddAssetDrawer({ baseCurrency = "USD" }: { baseCurrency?: string
                 Auto-sync from a wallet
               </div>
               <div className="text-xs text-text-muted">
-                Paste an address or connect MetaMask — read-only, no signing for paste.
+                ETH · Base · Arbitrum · Optimism · Polygon · BNB Chain. Read-only.
               </div>
             </div>
             <span className="text-gold text-lg shrink-0">→</span>

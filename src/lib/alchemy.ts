@@ -1,21 +1,88 @@
 /**
- * Alchemy wrappers — ERC-20 + native ETH balance reads for a single address.
- * Server-only: reads process.env.ALCHEMY_API_KEY which never leaves the server.
+ * Alchemy wrappers — native + ERC-20 balance reads across all supported
+ * EVM chains. Server-only: reads process.env.ALCHEMY_API_KEY which never
+ * leaves the server.
  *
- * Two methods we rely on:
- *   - alchemy_getTokenBalances(address, 'erc20')  → all non-zero ERC-20 holdings in one call
- *   - alchemy_getTokenMetadata(contract)          → name/symbol/decimals/logo per token
- *   - eth_getBalance(address, 'latest')           → native ETH
+ * Three methods we rely on:
+ *   - alchemy_getTokenBalances(address, 'erc20')  → all non-zero ERC-20s
+ *   - alchemy_getTokenMetadata(contract)          → name/symbol/decimals/logo
+ *   - eth_getBalance(address, 'latest')           → native coin (ETH/BNB/MATIC)
  *
- * Free tier (300M CU/mo) covers us easily at v1 volume.
+ * Alchemy's free tier covers all listed chains on a single key.
  */
 
-const ALCHEMY_BASE = "https://eth-mainnet.g.alchemy.com/v2";
+export type Chain =
+  | "ethereum"
+  | "base"
+  | "arbitrum"
+  | "optimism"
+  | "polygon"
+  | "bsc";
 
-function alchemyUrl(): string {
+export const SUPPORTED_CHAINS: Chain[] = [
+  "ethereum",
+  "base",
+  "arbitrum",
+  "optimism",
+  "polygon",
+  "bsc",
+];
+
+/** Alchemy subdomain per chain. https://docs.alchemy.com/reference/api-overview */
+const ALCHEMY_HOST: Record<Chain, string> = {
+  ethereum: "eth-mainnet.g.alchemy.com",
+  base: "base-mainnet.g.alchemy.com",
+  arbitrum: "arb-mainnet.g.alchemy.com",
+  optimism: "opt-mainnet.g.alchemy.com",
+  polygon: "polygon-mainnet.g.alchemy.com",
+  bsc: "bnb-mainnet.g.alchemy.com",
+};
+
+/**
+ * Native coin metadata per chain. The native coin isn't an ERC-20 contract —
+ * it's the chain's gas asset. We price it via CoinGecko using a fixed slug
+ * and display it with a fixed ticker.
+ */
+export const NATIVE_COIN: Record<
+  Chain,
+  { slug: string; symbol: string; name: string; decimals: 18 }
+> = {
+  ethereum: { slug: "ethereum", symbol: "ETH", name: "Ethereum", decimals: 18 },
+  base: { slug: "ethereum", symbol: "ETH", name: "Ethereum (Base)", decimals: 18 },
+  arbitrum: {
+    slug: "ethereum",
+    symbol: "ETH",
+    name: "Ethereum (Arbitrum)",
+    decimals: 18,
+  },
+  optimism: {
+    slug: "ethereum",
+    symbol: "ETH",
+    name: "Ethereum (Optimism)",
+    decimals: 18,
+  },
+  polygon: {
+    slug: "matic-network",
+    symbol: "MATIC",
+    name: "Polygon",
+    decimals: 18,
+  },
+  bsc: { slug: "binancecoin", symbol: "BNB", name: "BNB", decimals: 18 },
+};
+
+export const CHAIN_LABEL: Record<Chain, string> = {
+  ethereum: "Ethereum",
+  base: "Base",
+  arbitrum: "Arbitrum",
+  optimism: "Optimism",
+  polygon: "Polygon",
+  bsc: "BNB Chain",
+};
+
+function alchemyUrl(chain: Chain): string {
   const key = process.env.ALCHEMY_API_KEY;
   if (!key) throw new Error("ALCHEMY_API_KEY is not set");
-  return `${ALCHEMY_BASE}/${key}`;
+  return `https://${ALCHEMY_HOST[chain]}/v2/${key}`;
 }
 
 type JsonRpcResponse<T> = {
@@ -25,52 +92,58 @@ type JsonRpcResponse<T> = {
   error?: { code: number; message: string };
 };
 
-async function rpc<T>(method: string, params: unknown[]): Promise<T> {
-  const res = await fetch(alchemyUrl(), {
+async function rpc<T>(chain: Chain, method: string, params: unknown[]): Promise<T> {
+  const res = await fetch(alchemyUrl(chain), {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
     cache: "no-store",
   });
-  if (!res.ok) throw new Error(`Alchemy ${method} HTTP ${res.status}`);
+  if (!res.ok) throw new Error(`Alchemy ${chain} ${method} HTTP ${res.status}`);
   const json = (await res.json()) as JsonRpcResponse<T>;
-  if (json.error) throw new Error(`Alchemy ${method}: ${json.error.message}`);
-  if (json.result === undefined) throw new Error(`Alchemy ${method}: empty result`);
+  if (json.error) throw new Error(`Alchemy ${chain} ${method}: ${json.error.message}`);
+  if (json.result === undefined) {
+    throw new Error(`Alchemy ${chain} ${method}: empty result`);
+  }
   return json.result;
 }
 
 export type TokenBalance = {
-  contractAddress: string;   // lowercased 0x...
-  balance: bigint;           // raw uint256
+  contractAddress: string; // lowercased 0x...
+  balance: bigint; // raw uint256
 };
 
-export async function getEthBalance(address: string): Promise<bigint> {
-  const hex = await rpc<string>("eth_getBalance", [address, "latest"]);
+export async function getNativeBalance(chain: Chain, address: string): Promise<bigint> {
+  const hex = await rpc<string>(chain, "eth_getBalance", [address, "latest"]);
   return BigInt(hex);
 }
 
 /**
- * Return all non-zero ERC-20 balances for the address. Alchemy streams up to
- * 100 per page; for v1 we take the first page (covers ~99% of retail wallets).
+ * All non-zero ERC-20 (and on BSC, BEP-20) balances for the address. Alchemy
+ * streams up to 100 per page; for v1 we take the first page.
  */
-export async function getErc20Balances(address: string): Promise<TokenBalance[]> {
+export async function getErc20Balances(
+  chain: Chain,
+  address: string,
+): Promise<TokenBalance[]> {
   type Raw = {
     address: string;
-    tokenBalances: { contractAddress: string; tokenBalance: string; error?: string | null }[];
+    tokenBalances: {
+      contractAddress: string;
+      tokenBalance: string;
+      error?: string | null;
+    }[];
   };
-  const result = await rpc<Raw>("alchemy_getTokenBalances", [address, "erc20"]);
+  const result = await rpc<Raw>(chain, "alchemy_getTokenBalances", [address, "erc20"]);
   const out: TokenBalance[] = [];
   for (const tb of result.tokenBalances ?? []) {
     if (tb.error) continue;
     try {
       const bn = BigInt(tb.tokenBalance);
       if (bn === BigInt(0)) continue;
-      out.push({
-        contractAddress: tb.contractAddress.toLowerCase(),
-        balance: bn,
-      });
+      out.push({ contractAddress: tb.contractAddress.toLowerCase(), balance: bn });
     } catch {
-      // Malformed hex — skip.
+      // malformed hex — skip
     }
   }
   return out;
@@ -83,8 +156,11 @@ export type TokenMetadata = {
   logo: string | null;
 };
 
-export async function getTokenMetadata(contract: string): Promise<TokenMetadata> {
-  const raw = await rpc<TokenMetadata>("alchemy_getTokenMetadata", [contract]);
+export async function getTokenMetadata(
+  chain: Chain,
+  contract: string,
+): Promise<TokenMetadata> {
+  const raw = await rpc<TokenMetadata>(chain, "alchemy_getTokenMetadata", [contract]);
   return {
     name: raw.name ?? null,
     symbol: raw.symbol ?? null,

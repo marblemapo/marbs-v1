@@ -83,8 +83,8 @@ export function ConnectedWalletsSection({
             <div className="font-sans text-base font-bold">No wallet connected</div>
             <div className="text-sm text-text-secondary max-w-[420px] leading-relaxed">
               Paste a public address or sign in with MetaMask / Binance Web3
-              Wallet to auto-import your ETH and ERC-20 balances. Read-only —
-              we never spend.
+              Wallet. We&apos;ll sync balances across Ethereum, Base, Arbitrum,
+              Optimism, Polygon, and BNB Chain. Read-only — we never spend.
             </div>
           </div>
           <button
