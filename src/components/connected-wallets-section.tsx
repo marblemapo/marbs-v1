@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
+import { Wallet } from "lucide-react";
 import { ConnectWalletDialog } from "@/components/connect-wallet-dialog";
 import { DisconnectWalletDialog } from "@/components/disconnect-wallet-dialog";
 import { resyncWallet } from "@/app/actions/wallets";
@@ -114,8 +115,8 @@ export function ConnectedWalletsSection({
 
       {showEmptyBanner && (
         <div className="flex items-center gap-3 px-4 py-2.5 rounded-lg bg-surface border border-border">
-          <div className="w-7 h-7 rounded-full bg-gold-dim text-gold text-[10px] font-bold flex items-center justify-center shrink-0">
-            ETH
+          <div className="w-7 h-7 rounded-full bg-gold-dim text-gold flex items-center justify-center shrink-0">
+            <Wallet className="w-3.5 h-3.5" strokeWidth={2.25} />
           </div>
           <div className="text-sm text-text-secondary truncate flex-1">
             Got on-chain crypto? Auto-sync across 6 EVM chains — read-only.
@@ -158,8 +159,8 @@ export function ConnectedWalletsSection({
                 key={w.id}
                 className="flex items-center gap-3 p-4 hover:bg-surface-hover transition-colors"
               >
-                <div className="w-9 h-9 rounded-full bg-gold-dim text-gold text-[10px] font-bold flex items-center justify-center shrink-0">
-                  ETH
+                <div className="w-9 h-9 rounded-full bg-gold-dim text-gold flex items-center justify-center shrink-0">
+                  <Wallet className="w-4 h-4" strokeWidth={2.25} />
                 </div>
                 <div className="flex flex-col gap-0.5 min-w-0 flex-1">
                   <div className="flex items-center gap-2">
