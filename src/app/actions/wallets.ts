@@ -202,18 +202,29 @@ async function runSync(
     }),
   );
 
-  // Collect RPC errors to surface if *every* chain failed (usually means
-  // ALCHEMY_API_KEY missing or rate-limited). Single-chain errors are silent.
+  // Log per-chain outcome so Vercel logs can show which chain returned what.
+  // Users see aggregate success; debugging a "0 tokens" sync means checking
+  // these log lines to see whether the chain errored or genuinely had no
+  // tokens to report.
   const rpcErrors: string[] = [];
-  for (const r of chainResults) {
+  for (let i = 0; i < chainResults.length; i++) {
+    const r = chainResults[i];
+    const chain = SUPPORTED_CHAINS[i];
     if (r.status === "rejected") {
-      rpcErrors.push(r.reason instanceof Error ? r.reason.message : String(r.reason));
+      const msg =
+        r.reason instanceof Error ? r.reason.message : String(r.reason);
+      console.warn(`[wallet-sync] ${chain} errored:`, msg);
+      rpcErrors.push(`${chain}: ${msg}`);
+    } else {
+      console.log(
+        `[wallet-sync] ${chain} ok: native=${r.value.nativeWei.toString()} erc20=${r.value.erc20s.length}`,
+      );
     }
   }
   if (rpcErrors.length === chainResults.length) {
     return {
       ok: false,
-      error: `Couldn't read from any chain: ${rpcErrors[0] ?? "unknown error"}`,
+      error: `Couldn't read from any chain. First error: ${rpcErrors[0] ?? "unknown"}`,
     };
   }
 
