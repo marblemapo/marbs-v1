@@ -71,7 +71,7 @@ export function ConnectedWalletsSection({
         <button
           type="button"
           onClick={() => setConnectOpen(true)}
-          className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg bg-surface text-text-secondary font-semibold text-xs hover:bg-surface-hover border border-border transition-colors"
+          className="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-lg bg-primary text-primary-foreground font-semibold text-sm hover:bg-primary/80 transition-colors"
         >
           + Connect wallet
         </button>
@@ -90,7 +90,7 @@ export function ConnectedWalletsSection({
           <button
             type="button"
             onClick={() => setConnectOpen(true)}
-            className="text-sm font-semibold text-gold hover:text-gold/80 transition-colors"
+            className="f3-cta"
           >
             Connect wallet →
           </button>
