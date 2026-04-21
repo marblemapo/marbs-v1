@@ -10,6 +10,7 @@ import {
   type ConnectedWalletRow,
 } from "@/components/connected-wallets-section";
 import { NetWorthHero } from "@/components/networth-hero";
+import { DangerZone } from "@/components/danger-zone";
 import { CurrencyProvider } from "@/components/currency-context";
 import { fetchFxRates, convertFx } from "@/lib/fx";
 import { fetchPrice } from "@/lib/prices";
@@ -318,6 +319,8 @@ export default async function DashboardPage() {
             )}
           </section>
         </CurrencyProvider>
+
+        {user.email && <DangerZone email={user.email} />}
       </div>
     </main>
   );
