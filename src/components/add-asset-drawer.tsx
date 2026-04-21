@@ -148,27 +148,35 @@ export function AddAssetDrawer({ baseCurrency = "USD" }: { baseCurrency?: string
         </SheetHeader>
 
         <form onSubmit={handleSubmit} className="flex flex-col flex-1 gap-5 px-6 pb-6 overflow-y-auto">
-          {/* Connect wallet shortcut */}
-          {uiClass === "crypto" && (
-            <button
-              type="button"
-              onClick={() => {
-                setOpen(false);
-                setWalletOpen(true);
-              }}
-              className="flex items-center justify-between gap-3 p-3.5 rounded-lg bg-gold-dim border border-gold/20 hover:border-gold/40 transition-colors text-left"
-            >
-              <div className="flex flex-col gap-0.5">
-                <div className="text-sm font-semibold text-gold">
-                  Auto-sync from a wallet
-                </div>
-                <div className="text-xs text-text-muted">
-                  Paste an address or connect MetaMask — read-only.
-                </div>
+          {/* Connect wallet shortcut — always visible, not just on Crypto tab.
+              Most people don't think "I should pick Crypto first" when they
+              want to sync their wallet; they want the option up front. */}
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false);
+              setWalletOpen(true);
+            }}
+            className="flex items-center justify-between gap-3 p-3.5 rounded-lg bg-gold-dim border border-gold/20 hover:border-gold/40 transition-colors text-left"
+          >
+            <div className="flex flex-col gap-0.5">
+              <div className="text-sm font-semibold text-gold">
+                Auto-sync from a wallet
               </div>
-              <span className="text-gold text-lg shrink-0">→</span>
-            </button>
-          )}
+              <div className="text-xs text-text-muted">
+                Paste an address or connect MetaMask — read-only, no signing for paste.
+              </div>
+            </div>
+            <span className="text-gold text-lg shrink-0">→</span>
+          </button>
+
+          <div className="flex items-center gap-3">
+            <div className="flex-1 h-px bg-border" />
+            <span className="font-plex text-[10px] text-text-muted uppercase tracking-wider">
+              or add manually
+            </span>
+            <div className="flex-1 h-px bg-border" />
+          </div>
 
           {/* Class picker */}
           <div className="flex flex-col gap-2">

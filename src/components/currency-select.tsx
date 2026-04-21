@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { ChevronDown } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { CURRENCIES, type CurrencyOption } from "@/lib/currencies";
@@ -127,8 +128,29 @@ export function CurrencySelect({
         role="combobox"
         aria-expanded={open}
         aria-autocomplete="list"
-        className={cn("h-11", exactMatch && "pl-10")}
+        className={cn("h-11 pr-9", exactMatch && "pl-10")}
       />
+
+      {/* Chevron affordance — clicking it toggles the list. Kept visually
+          separate from the flag (which is a read-only badge) so the
+          interactive surface is obvious. */}
+      <button
+        type="button"
+        tabIndex={-1}
+        aria-label={open ? "Close currency list" : "Open currency list"}
+        onMouseDown={(e) => {
+          e.preventDefault();
+          setOpen((v) => !v);
+        }}
+        className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-md text-text-muted hover:text-foreground hover:bg-surface-hover transition-colors"
+      >
+        <ChevronDown
+          className={cn(
+            "w-4 h-4 transition-transform",
+            open && "rotate-180",
+          )}
+        />
+      </button>
 
       {/* Exact match hint — so user can see the name of what they've typed */}
       {exactMatch && !open && (
