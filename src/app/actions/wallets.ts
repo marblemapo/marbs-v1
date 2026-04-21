@@ -5,7 +5,13 @@ import { after } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { fetchPrice } from "@/lib/prices";
-import { resolveAddressOrEns, lookupEnsName } from "@/lib/ethereum";
+import {
+  resolveAddressOrEns,
+  lookupEnsName,
+  buildSiweMessage,
+  verifySiweSignature,
+  generateNonce,
+} from "@/lib/ethereum";
 import {
   getNativeBalance,
   getErc20Balances,
@@ -19,6 +25,7 @@ import {
 import { resolveTokenSlugs, type TokenSlugRow } from "@/lib/eth-tokens";
 
 const DUST_USD = 1;
+const SIWE_MAX_AGE_MS = 5 * 60 * 1000;
 
 const SCAM_PATTERNS = [
   /https?:\/\//i,
@@ -32,6 +39,9 @@ const SCAM_PATTERNS = [
 type ConnectInput = {
   input: string;
   label?: string | null;
+  method: "address" | "signature";
+  message?: string;
+  signature?: `0x${string}`;
 };
 
 export type ConnectWalletResult =
@@ -39,6 +49,44 @@ export type ConnectWalletResult =
   | { ok: false; error: string };
 
 export type WalletMutateResult = { ok: true } | { ok: false; error: string };
+
+export type SiweChallenge = {
+  message: string;
+  nonce: string;
+  issuedAt: string;
+};
+
+export async function createSiweChallenge(params: {
+  address: string;
+  domain: string;
+  uri: string;
+}): Promise<SiweChallenge | { error: string }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Not signed in" };
+  if (!/^0x[a-fA-F0-9]{40}$/.test(params.address)) {
+    return { error: "Invalid address" };
+  }
+
+  const nonce = generateNonce();
+  const issuedAt = new Date().toISOString();
+  const message = buildSiweMessage({
+    domain: params.domain,
+    address: params.address,
+    uri: params.uri,
+    version: "1",
+    chainId: 1,
+    nonce,
+    issuedAt,
+    statement:
+      "Prove you own this wallet so marbs can read its on-chain balances " +
+      "across Ethereum, Base, Arbitrum, Optimism, Polygon, and BNB Chain. " +
+      "This signature grants no spend or approval rights.",
+  });
+  return { message, nonce, issuedAt };
+}
 
 export async function connectWallet(
   opts: ConnectInput,
@@ -58,6 +106,24 @@ export async function connectWallet(
     };
   }
 
+  if (opts.method === "signature") {
+    if (!opts.message || !opts.signature) {
+      return { ok: false, error: "Missing signature or message." };
+    }
+    const ok = await verifySiweSignature({
+      message: opts.message,
+      signature: opts.signature,
+      expectedAddress: resolved.address,
+    });
+    if (!ok) return { ok: false, error: "Signature verification failed." };
+
+    const issuedMatch = opts.message.match(/^Issued At: (.+)$/m);
+    const issuedAt = issuedMatch ? Date.parse(issuedMatch[1]) : NaN;
+    if (!Number.isFinite(issuedAt) || Date.now() - issuedAt > SIWE_MAX_AGE_MS) {
+      return { ok: false, error: "Signature expired. Try again." };
+    }
+  }
+
   let ensName = resolved.ensName;
   if (!ensName) ensName = await lookupEnsName(resolved.address);
 
@@ -69,7 +135,7 @@ export async function connectWallet(
         address: resolved.address,
         ens_name: ensName,
         label: opts.label?.trim() || null,
-        connection_method: "address",
+        connection_method: opts.method,
       },
       { onConflict: "user_id,address" },
     )
