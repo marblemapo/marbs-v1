@@ -155,9 +155,9 @@ export function ConnectWalletDialog({
             Connect a wallet
           </SheetTitle>
           <p className="text-sm text-text-secondary mt-2 leading-relaxed">
-            Read-only sync of an Ethereum address. We never take custody, never
-            sign transactions, and only read public on-chain balances. Disconnect
-            any time.
+            Read-only sync of an EVM address across Ethereum, Base, Arbitrum,
+            Optimism, Polygon, and BNB Chain. We never take custody, never sign
+            transactions, and only read public balances. Disconnect any time.
           </p>
         </SheetHeader>
 

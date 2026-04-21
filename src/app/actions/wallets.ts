@@ -13,18 +13,20 @@ import {
   generateNonce,
 } from "@/lib/ethereum";
 import {
-  getEthBalance,
+  getNativeBalance,
   getErc20Balances,
   formatUnits,
+  SUPPORTED_CHAINS,
+  NATIVE_COIN,
+  CHAIN_LABEL,
+  type Chain,
   type TokenBalance,
 } from "@/lib/alchemy";
-import { resolveTokenSlugs } from "@/lib/eth-tokens";
+import { resolveTokenSlugs, type TokenSlugRow } from "@/lib/eth-tokens";
 
 const DUST_USD = 1;
 const SIWE_MAX_AGE_MS = 5 * 60 * 1000;
 
-// Obvious scam patterns in token names — airdrop farms use URLs, "claim", etc.
-// Err toward dropping: user can always add a legit token manually.
 const SCAM_PATTERNS = [
   /https?:\/\//i,
   /\.(com|io|xyz|org|net|finance)\b/i,
@@ -35,11 +37,11 @@ const SCAM_PATTERNS = [
 ];
 
 type ConnectInput = {
-  input: string;               // raw text: 0x... or ENS name
+  input: string;
   label?: string | null;
   method: "address" | "signature";
-  message?: string;            // required if method='signature'
-  signature?: `0x${string}`;   // required if method='signature'
+  message?: string;
+  signature?: `0x${string}`;
 };
 
 export type ConnectWalletResult =
@@ -48,15 +50,6 @@ export type ConnectWalletResult =
 
 export type WalletMutateResult = { ok: true } | { ok: false; error: string };
 
-// -----------------------------------------------------------------------------
-// SIWE challenge — the server generates the message the client will ask the
-// wallet to sign. Embedding a server-generated nonce + issuedAt lets us bound
-// signature freshness on return.
-//
-// v1 tradeoff: we don't persist nonces server-side. Replay is bounded by the
-// 5-minute `issuedAt` window + the unique(user, chain, address) index, which
-// makes "register the same wallet twice" a no-op. Low stakes (read-only).
-// -----------------------------------------------------------------------------
 export type SiweChallenge = {
   message: string;
   nonce: string;
@@ -69,9 +62,10 @@ export async function createSiweChallenge(params: {
   uri: string;
 }): Promise<SiweChallenge | { error: string }> {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
   if (!user) return { error: "Not signed in" };
-
   if (!/^0x[a-fA-F0-9]{40}$/.test(params.address)) {
     return { error: "Invalid address" };
   }
@@ -87,21 +81,20 @@ export async function createSiweChallenge(params: {
     nonce,
     issuedAt,
     statement:
-      "Prove you own this wallet so marbs can read its on-chain balances. " +
+      "Prove you own this wallet so marbs can read its on-chain balances " +
+      "across Ethereum, Base, Arbitrum, Optimism, Polygon, and BNB Chain. " +
       "This signature grants no spend or approval rights.",
   });
   return { message, nonce, issuedAt };
 }
 
-// -----------------------------------------------------------------------------
-// Connect: resolve address → (optional) verify signature → insert wallet →
-// immediately run first sync.
-// -----------------------------------------------------------------------------
 export async function connectWallet(
   opts: ConnectInput,
 ): Promise<ConnectWalletResult> {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
   if (!user) return { ok: false, error: "Not signed in" };
 
   const resolved = await resolveAddressOrEns(opts.input);
@@ -113,7 +106,6 @@ export async function connectWallet(
     };
   }
 
-  // SIWE verification for "connect wallet" flow.
   if (opts.method === "signature") {
     if (!opts.message || !opts.signature) {
       return { ok: false, error: "Missing signature or message." };
@@ -132,41 +124,30 @@ export async function connectWallet(
     }
   }
 
-  // If we only got a hex address, try a reverse ENS lookup so the UI can show
-  // a friendly name. Non-fatal on failure.
   let ensName = resolved.ensName;
   if (!ensName) ensName = await lookupEnsName(resolved.address);
 
-  // Upsert the wallet row (unique index on user_id + chain + address lets us
-  // return the existing id on reconnect instead of erroring).
   const { data: wallet, error: upsertErr } = await supabase
     .from("connected_wallets")
     .upsert(
       {
         user_id: user.id,
-        chain: "ethereum",
         address: resolved.address,
         ens_name: ensName,
         label: opts.label?.trim() || null,
         connection_method: opts.method,
       },
-      { onConflict: "user_id,chain,address" },
+      { onConflict: "user_id,address" },
     )
     .select("id")
     .single();
 
   if (upsertErr || !wallet) {
-    return {
-      ok: false,
-      error: upsertErr?.message ?? "Failed to save wallet",
-    };
+    return { ok: false, error: upsertErr?.message ?? "Failed to save wallet" };
   }
 
   const syncResult = await runSync(wallet.id, user.id, resolved.address);
-  if (!syncResult.ok) {
-    // Keep the wallet row — user can retry resync — but surface the error.
-    return { ok: false, error: syncResult.error };
-  }
+  if (!syncResult.ok) return { ok: false, error: syncResult.error };
 
   revalidatePath("/dashboard");
   return {
@@ -177,14 +158,13 @@ export async function connectWallet(
   };
 }
 
-// -----------------------------------------------------------------------------
-// Resync — pulls the latest balances for an already-connected wallet.
-// -----------------------------------------------------------------------------
 export async function resyncWallet(
   walletId: string,
 ): Promise<ConnectWalletResult> {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
   if (!user) return { ok: false, error: "Not signed in" };
 
   const { data: wallet } = await supabase
@@ -206,15 +186,14 @@ export async function resyncWallet(
   };
 }
 
-// -----------------------------------------------------------------------------
-// Rename + disconnect
-// -----------------------------------------------------------------------------
 export async function renameWallet(
   walletId: string,
   label: string,
 ): Promise<WalletMutateResult> {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
   if (!user) return { ok: false, error: "Not signed in" };
 
   const { error } = await supabase
@@ -232,11 +211,12 @@ export async function disconnectWallet(
   opts: { keepAssets: boolean },
 ): Promise<WalletMutateResult> {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
   if (!user) return { ok: false, error: "Not signed in" };
 
   if (!opts.keepAssets) {
-    // Cascades to balance_snapshots via FK ON DELETE CASCADE on assets.
     const { error: assetsErr } = await supabase
       .from("assets")
       .delete()
@@ -255,83 +235,135 @@ export async function disconnectWallet(
 }
 
 // -----------------------------------------------------------------------------
-// Core sync — shared by connectWallet + resyncWallet.
-//
-// Per-token errors are isolated with Promise.allSettled so one bad token
-// never aborts the batch. Pricing failures drop the token from the import
-// rather than inserting a valueless row.
+// Core sync — iterates all supported chains, aggregates balances by CoinGecko
+// slug (so USDT-on-ETH + USDT-on-BSC merge into one "USDT" asset with summed
+// quantity), then upserts.
 // -----------------------------------------------------------------------------
 type SyncOk = { ok: true; tokensAdded: number; totalUsd: number };
 type SyncErr = { ok: false; error: string };
+
+type SlugAgg = {
+  slug: string;
+  symbol: string;
+  name: string;
+  logo: string | null;
+  quantity: number;
+  /** Breakdown per chain for metadata + future per-chain UI. */
+  chains: Partial<Record<Chain, { quantity: number; contract: string | null }>>;
+};
 
 async function runSync(
   walletId: string,
   userId: string,
   address: string,
 ): Promise<SyncOk | SyncErr> {
-  let ethWei: bigint;
-  let erc20s: TokenBalance[];
-  try {
-    [ethWei, erc20s] = await Promise.all([
-      getEthBalance(address),
-      getErc20Balances(address),
-    ]);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : "on-chain read failed";
-    return { ok: false, error: `Couldn't read from Ethereum: ${msg}` };
+  // Fetch all chains in parallel. One chain failing shouldn't tank the others.
+  const chainResults = await Promise.allSettled(
+    SUPPORTED_CHAINS.map(async (chain) => {
+      const [nativeWei, erc20s] = await Promise.all([
+        getNativeBalance(chain, address),
+        getErc20Balances(chain, address),
+      ]);
+      return { chain, nativeWei, erc20s };
+    }),
+  );
+
+  // Collect RPC errors to surface if *every* chain failed (usually means
+  // ALCHEMY_API_KEY missing or rate-limited). Single-chain errors are silent.
+  const rpcErrors: string[] = [];
+  for (const r of chainResults) {
+    if (r.status === "rejected") {
+      rpcErrors.push(r.reason instanceof Error ? r.reason.message : String(r.reason));
+    }
+  }
+  if (rpcErrors.length === chainResults.length) {
+    return {
+      ok: false,
+      error: `Couldn't read from any chain: ${rpcErrors[0] ?? "unknown error"}`,
+    };
   }
 
-  const slugMap = await resolveTokenSlugs(erc20s.map((t) => t.contractAddress));
+  // Aggregate candidates across chains, keyed by CoinGecko slug.
+  const bySlug = new Map<string, SlugAgg>();
 
-  // Build a list of (slug, quantity, contract, meta) tuples to price + insert.
-  type Candidate = {
-    slug: string;
-    symbol: string;
-    name: string;
-    logo: string | null;
-    contract: string | null;
-    quantity: number;
-  };
-  const candidates: Candidate[] = [];
-
-  // ETH itself always priceable via coingecko slug "ethereum".
-  const ethQty = formatUnits(ethWei, 18);
-  if (ethQty > 0) {
-    candidates.push({
-      slug: "ethereum",
-      symbol: "ETH",
-      name: "Ethereum",
-      logo: null,
-      contract: null,
-      quantity: ethQty,
-    });
+  function addCandidate(
+    chain: Chain,
+    slug: string,
+    symbol: string,
+    name: string,
+    logo: string | null,
+    contract: string | null,
+    quantity: number,
+  ) {
+    if (!(quantity > 0)) return;
+    if (isScammy(name) || isScammy(symbol)) return;
+    const existing = bySlug.get(slug);
+    if (existing) {
+      existing.quantity += quantity;
+      const prev = existing.chains[chain];
+      existing.chains[chain] = {
+        quantity: (prev?.quantity ?? 0) + quantity,
+        contract,
+      };
+      // Prefer a non-null logo/name across chains.
+      if (!existing.logo && logo) existing.logo = logo;
+    } else {
+      bySlug.set(slug, {
+        slug,
+        symbol,
+        name,
+        logo,
+        quantity,
+        chains: { [chain]: { quantity, contract } },
+      });
+    }
   }
 
-  for (const tb of erc20s) {
-    const meta = slugMap.get(tb.contractAddress);
-    if (!meta?.coingecko_slug) continue; // no price source → skip
-    if (meta.decimals == null) continue;
+  for (const r of chainResults) {
+    if (r.status !== "fulfilled") continue;
+    const { chain, nativeWei, erc20s } = r.value;
 
-    const name = meta.name ?? meta.symbol ?? "Unknown token";
-    const symbol = (meta.symbol ?? "").toUpperCase();
-    if (isScammy(name) || isScammy(symbol)) continue;
+    // Native coin
+    const native = NATIVE_COIN[chain];
+    const nativeQty = formatUnits(nativeWei, native.decimals);
+    if (nativeQty > 0) {
+      addCandidate(
+        chain,
+        native.slug,
+        native.symbol,
+        native.name,
+        null,
+        null,
+        nativeQty,
+      );
+    }
 
-    const qty = formatUnits(tb.balance, meta.decimals);
-    if (!(qty > 0)) continue;
-
-    candidates.push({
-      slug: meta.coingecko_slug,
-      symbol: symbol || meta.coingecko_slug.toUpperCase(),
-      name,
-      logo: meta.logo,
-      contract: tb.contractAddress,
-      quantity: qty,
-    });
+    // ERC-20s on this chain — resolve contract → slug in a batch.
+    const slugMap: Map<string, TokenSlugRow> = await resolveTokenSlugs(
+      chain,
+      erc20s.map((t) => t.contractAddress),
+    );
+    for (const tb of erc20s) {
+      const meta = slugMap.get(tb.contractAddress);
+      if (!meta?.coingecko_slug) continue;
+      if (meta.decimals == null) continue;
+      const name = meta.name ?? meta.symbol ?? "Unknown token";
+      const symbol = (meta.symbol ?? "").toUpperCase();
+      const qty = formatUnits(tb.balance, meta.decimals);
+      addCandidate(
+        chain,
+        meta.coingecko_slug,
+        symbol || meta.coingecko_slug.toUpperCase(),
+        name,
+        meta.logo,
+        tb.contractAddress,
+        qty,
+      );
+    }
   }
 
-  // Price everything in USD. fetchPrice hits CoinGecko which is rate-limited
-  // on free tier; dedupe slugs first so we make at most one call per token.
-  const uniqueSlugs = Array.from(new Set(candidates.map((c) => c.slug)));
+  // Price everything in USD once per slug.
+  const uniqueSlugs = Array.from(bySlug.keys());
   const priceResults = await Promise.allSettled(
     uniqueSlugs.map(async (slug) => {
       const quote = await fetchPrice("coingecko", slug, "USD");
@@ -352,7 +384,7 @@ async function runSync(
   }
 
   const supabase = await createClient();
-  const admin = createAdminClient(); // for price_cache writes (public-read RLS)
+  const admin = createAdminClient();
 
   let tokensAdded = 0;
   let totalUsd = 0;
@@ -365,8 +397,6 @@ async function runSync(
     fetched_at: string;
   }[] = [];
 
-  // Look up all existing assets for this wallet in one query so we know which
-  // ones need an insert vs a snapshot-append.
   const { data: existing } = await supabase
     .from("assets")
     .select("id, external_id")
@@ -377,15 +407,15 @@ async function runSync(
     if (row.external_id) existingBySlug.set(row.external_id, row.id);
   }
 
-  for (const c of candidates) {
-    const price = priceBySlug.get(c.slug);
-    if (!price) continue; // no price — skip, don't insert a $0 row
-    const valueUsd = c.quantity * price.price;
+  for (const agg of bySlug.values()) {
+    const price = priceBySlug.get(agg.slug);
+    if (!price) continue;
+    const valueUsd = agg.quantity * price.price;
     if (valueUsd < DUST_USD) continue;
 
     totalUsd += valueUsd;
     priceRowsToCache.push({
-      external_id: c.slug,
+      external_id: agg.slug,
       source: "coingecko",
       price_native: price.price,
       previous_native: price.previousClose,
@@ -393,15 +423,33 @@ async function runSync(
       fetched_at: price.asOf,
     });
 
-    const existingId = existingBySlug.get(c.slug);
+    const chainList = Object.keys(agg.chains) as Chain[];
+    const chainLabels = chainList.map((c) => CHAIN_LABEL[c]).join(", ");
+    const displayName =
+      chainList.length === 1 ? agg.name : `${agg.symbol} (${chainLabels})`;
+
+    const existingId = existingBySlug.get(agg.slug);
     if (existingId) {
+      // Keep metadata in sync (new chains might have been added since the
+      // last sync) + append a fresh snapshot for the merged total.
+      await supabase
+        .from("assets")
+        .update({
+          name: displayName,
+          metadata: {
+            logo: agg.logo,
+            chains: agg.chains,
+          },
+        })
+        .eq("id", existingId);
+
       const { error } = await supabase.from("balance_snapshots").insert({
         asset_id: existingId,
-        quantity: c.quantity,
+        quantity: agg.quantity,
         source: "imported",
       });
       if (error) continue;
-      tokensAdded += 1; // counts touched tokens, whether newly-added or refreshed
+      tokensAdded += 1;
       continue;
     }
 
@@ -410,16 +458,13 @@ async function runSync(
       .insert({
         user_id: userId,
         wallet_id: walletId,
-        name: c.name,
-        symbol: c.symbol || null,
+        name: displayName,
+        symbol: agg.symbol || null,
         asset_class: "crypto",
         native_currency: "USD",
         price_source: "coingecko",
-        external_id: c.slug,
-        metadata: {
-          logo: c.logo,
-          contract_address: c.contract,
-        },
+        external_id: agg.slug,
+        metadata: { logo: agg.logo, chains: agg.chains },
       })
       .select("id")
       .single();
@@ -427,7 +472,7 @@ async function runSync(
 
     const { error: snapErr } = await supabase.from("balance_snapshots").insert({
       asset_id: asset.id,
-      quantity: c.quantity,
+      quantity: agg.quantity,
       source: "imported",
     });
     if (snapErr) continue;
@@ -440,8 +485,6 @@ async function runSync(
     .update({ last_synced_at: new Date().toISOString() })
     .eq("id", walletId);
 
-  // Move price-cache writes off the critical path, same pattern as
-  // src/app/actions/assets.ts:310.
   if (priceRowsToCache.length) {
     after(async () => {
       const { error } = await admin
