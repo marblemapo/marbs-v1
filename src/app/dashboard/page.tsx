@@ -5,6 +5,10 @@ import { Button } from "@/components/ui/button";
 import { AddAssetDrawer } from "@/components/add-asset-drawer";
 import { DisplayNameEditor } from "@/components/display-name-editor";
 import { AssetsList, type AssetListRow } from "@/components/assets-list";
+import {
+  ConnectedWalletsSection,
+  type ConnectedWalletRow,
+} from "@/components/connected-wallets-section";
 import { NetWorthHero } from "@/components/networth-hero";
 import { CurrencyProvider } from "@/components/currency-context";
 import { fetchFxRates, convertFx } from "@/lib/fx";
@@ -32,9 +36,14 @@ export default async function DashboardPage() {
   const { data: assets } = await supabase
     .from("assets")
     .select(
-      "id, name, symbol, asset_class, native_currency, price_source, external_id, metadata",
+      "id, name, symbol, asset_class, native_currency, price_source, external_id, metadata, wallet_id",
     )
     .order("created_at", { ascending: false });
+
+  const { data: connectedWalletsRaw } = await supabase
+    .from("connected_wallets")
+    .select("id, address, ens_name, label, last_synced_at")
+    .order("created_at", { ascending: true });
 
   const assetIds = (assets ?? []).map((a) => a.id);
 
@@ -153,6 +162,7 @@ export default async function DashboardPage() {
       asset_class: a.asset_class,
       native_currency: a.native_currency,
       price_source: a.price_source,
+      wallet_id: a.wallet_id ?? null,
       latest_quantity,
       latest_price,
       logo,
@@ -178,6 +188,36 @@ export default async function DashboardPage() {
     if (!fxRates) return null;
     return convertFx(r.value_native, r.native_currency, baseCurrency, fxRates);
   };
+  // Aggregate assets per connected wallet for the wallets section above.
+  const walletAgg = new Map<string, { count: number; totalBase: number }>();
+  for (const r of rows) {
+    if (!r.wallet_id) continue;
+    const agg = walletAgg.get(r.wallet_id) ?? { count: 0, totalBase: 0 };
+    agg.count += 1;
+    if (r.value_native != null) {
+      const inBase =
+        r.native_currency === baseCurrency
+          ? r.value_native
+          : fxRates
+            ? convertFx(r.value_native, r.native_currency, baseCurrency, fxRates)
+            : null;
+      if (inBase != null) agg.totalBase += inBase;
+    }
+    walletAgg.set(r.wallet_id, agg);
+  }
+
+  const connectedWallets: ConnectedWalletRow[] = (connectedWalletsRaw ?? []).map(
+    (w) => ({
+      id: w.id,
+      address: w.address,
+      ens_name: w.ens_name,
+      label: w.label,
+      last_synced_at: w.last_synced_at,
+      token_count: walletAgg.get(w.id)?.count ?? 0,
+      total_usd_in_base: walletAgg.get(w.id)?.totalBase ?? 0,
+    }),
+  );
+
   const rowsWithValue = [...rows].sort((a, b) => {
     const av = baseValue(a);
     const bv = baseValue(b);
@@ -238,6 +278,11 @@ export default async function DashboardPage() {
               value_native: r.value_native,
               previous_value_native: r.previous_value_native,
             }))}
+          />
+
+          <ConnectedWalletsSection
+            wallets={connectedWallets}
+            baseCurrency={baseCurrency}
           />
 
           <section className="flex flex-col gap-3">

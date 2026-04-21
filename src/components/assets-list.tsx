@@ -12,6 +12,8 @@ export type AssetListRow = EditableAsset & {
   price_source: "yahoo" | "coingecko" | "finnhub" | "twelvedata" | "manual";
   value_native: number | null;
   logo: string | null;
+  /** Non-null for rows imported from a connected wallet. */
+  wallet_id?: string | null;
 };
 
 const CLASS_LABELS: Record<AssetListRow["asset_class"], string> = {
@@ -121,6 +123,11 @@ export function AssetsList({ rows }: { rows: AssetListRow[] }) {
                   <span className="text-[10px] text-text-muted uppercase tracking-wider font-medium">
                     {CLASS_LABELS[r.asset_class]}
                   </span>
+                  {r.wallet_id && (
+                    <span className="text-[10px] text-gold uppercase tracking-wider font-medium bg-gold-dim px-1.5 py-0.5 rounded">
+                      Wallet
+                    </span>
+                  )}
                 </div>
                 <div className="text-xs text-text-muted truncate">
                   {r.latest_quantity != null ? (

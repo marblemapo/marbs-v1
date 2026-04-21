@@ -11,6 +11,7 @@ import { SymbolAutocomplete } from "@/components/symbol-autocomplete";
 import type { SearchResult } from "@/app/api/search/route";
 import { CurrencySelect } from "@/components/currency-select";
 import { getCurrency } from "@/lib/currencies";
+import { ConnectWalletDialog } from "@/components/connect-wallet-dialog";
 
 // UI class — the tab the user picks. The DB enum has a separate "etf" value
 // which we infer from the Finnhub search result, so there's no ETF tab here.
@@ -28,6 +29,7 @@ const CLASSES: { id: UiClass; label: string; hint: string }[] = [
 
 export function AddAssetDrawer({ baseCurrency = "USD" }: { baseCurrency?: string }) {
   const [open, setOpen] = useState(false);
+  const [walletOpen, setWalletOpen] = useState(false);
   const [uiClass, setUiClass] = useState<UiClass>("stock");
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -122,6 +124,7 @@ export function AddAssetDrawer({ baseCurrency = "USD" }: { baseCurrency?: string
   }
 
   return (
+    <>
     <Sheet
       open={open}
       onOpenChange={(v) => {
@@ -145,6 +148,36 @@ export function AddAssetDrawer({ baseCurrency = "USD" }: { baseCurrency?: string
         </SheetHeader>
 
         <form onSubmit={handleSubmit} className="flex flex-col flex-1 gap-5 px-6 pb-6 overflow-y-auto">
+          {/* Connect wallet shortcut — always visible, not just on Crypto tab.
+              Most people don't think "I should pick Crypto first" when they
+              want to sync their wallet; they want the option up front. */}
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false);
+              setWalletOpen(true);
+            }}
+            className="flex items-center justify-between gap-3 p-3.5 rounded-lg bg-gold-dim border border-gold/20 hover:border-gold/40 transition-colors text-left"
+          >
+            <div className="flex flex-col gap-0.5">
+              <div className="text-sm font-semibold text-gold">
+                Auto-sync from a wallet
+              </div>
+              <div className="text-xs text-text-muted">
+                Paste an address or connect MetaMask — read-only, no signing for paste.
+              </div>
+            </div>
+            <span className="text-gold text-lg shrink-0">→</span>
+          </button>
+
+          <div className="flex items-center gap-3">
+            <div className="flex-1 h-px bg-border" />
+            <span className="font-plex text-[10px] text-text-muted uppercase tracking-wider">
+              or add manually
+            </span>
+            <div className="flex-1 h-px bg-border" />
+          </div>
+
           {/* Class picker */}
           <div className="flex flex-col gap-2">
             <Label className="text-[11px] text-text-muted uppercase tracking-wider font-medium">
@@ -325,5 +358,7 @@ export function AddAssetDrawer({ baseCurrency = "USD" }: { baseCurrency?: string
         </form>
       </SheetContent>
     </Sheet>
+    <ConnectWalletDialog open={walletOpen} onOpenChange={setWalletOpen} />
+    </>
   );
 }

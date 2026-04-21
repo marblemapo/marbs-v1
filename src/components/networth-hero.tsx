@@ -57,14 +57,24 @@ function formatDelta(value: number, currency: string) {
 export function NetWorthHero({ rows }: { rows: Row[] }) {
   const { currency, setCurrency, currencies, fxRates } = useCurrency();
 
-  const { total, previousTotal, hasPrevious, skipped } = useMemo(() => {
+  // Two separate totals so TODAY stays honest:
+  //   `total`        — sum of everything priced, for the headline net worth.
+  //   `deltaBasis`   — sum of only rows that ALSO have a previous-close
+  //                    counterpart, paired 1-to-1 with `prevBasis`. That way
+  //                    the % is (basis_now − basis_prev) / basis_prev, not
+  //                    (full_now − partial_prev) / partial_prev which used
+  //                    to under-state losses when a new asset had no
+  //                    previous_native yet.
+  //   `pendingDelta` — count of priced assets still missing a previous, so
+  //                    we can tell the user "partial" vs "complete" coverage.
+  const { total, deltaValue, deltaPct, skipped, pendingDelta } = useMemo(() => {
     let total = 0;
-    let previousTotal = 0;
-    let hasPrevious = false;
+    let deltaBasis = 0;
+    let prevBasis = 0;
     let skipped = 0;
+    let pendingDelta = 0;
     for (const r of rows) {
       if (r.value_native == null) continue;
-      // Current value
       let cur: number | null = null;
       if (r.native_currency === currency) {
         cur = r.value_native;
@@ -76,33 +86,34 @@ export function NetWorthHero({ rows }: { rows: Row[] }) {
         continue;
       }
       total += cur;
-      // Previous value (only counts into delta if *every* priced asset has it)
-      if (r.previous_value_native != null) {
-        if (r.native_currency === currency) {
-          previousTotal += r.previous_value_native;
-          hasPrevious = true;
-        } else if (fxRates) {
-          const p = convertFx(
-            r.previous_value_native,
-            r.native_currency,
-            currency,
-            fxRates,
-          );
-          if (p != null) {
-            previousTotal += p;
-            hasPrevious = true;
-          }
-        }
-      }
-    }
-    return { total, previousTotal, hasPrevious, skipped };
-  }, [rows, currency, fxRates]);
 
-  const deltaValue = hasPrevious ? total - previousTotal : null;
-  const deltaPct =
-    hasPrevious && previousTotal > 0
-      ? ((total - previousTotal) / previousTotal) * 100
-      : null;
+      if (r.previous_value_native == null) {
+        pendingDelta++;
+        continue;
+      }
+      let prev: number | null = null;
+      if (r.native_currency === currency) {
+        prev = r.previous_value_native;
+      } else if (fxRates) {
+        prev = convertFx(
+          r.previous_value_native,
+          r.native_currency,
+          currency,
+          fxRates,
+        );
+      }
+      if (prev == null) {
+        pendingDelta++;
+        continue;
+      }
+      deltaBasis += cur;
+      prevBasis += prev;
+    }
+    const deltaValue = prevBasis > 0 ? deltaBasis - prevBasis : null;
+    const deltaPct =
+      prevBasis > 0 ? ((deltaBasis - prevBasis) / prevBasis) * 100 : null;
+    return { total, deltaValue, deltaPct, skipped, pendingDelta };
+  }, [rows, currency, fxRates]);
 
   const anyValue = rows.some((r) => r.value_native != null);
   const assetsWithValue = rows.filter((r) => r.value_native != null).length;
@@ -243,7 +254,9 @@ export function NetWorthHero({ rows }: { rows: Row[] }) {
             <div className="font-plex text-[11px] text-text-muted/70">
               {deltaPct == null
                 ? "Backfilling · check back shortly"
-                : `${deltaPct >= 0 ? "+" : ""}${deltaPct.toFixed(2)}% since prev close`}
+                : pendingDelta > 0
+                  ? `${deltaPct >= 0 ? "+" : ""}${deltaPct.toFixed(2)}% · ${pendingDelta} still backfilling`
+                  : `${deltaPct >= 0 ? "+" : ""}${deltaPct.toFixed(2)}% since prev close`}
             </div>
           </div>
 
