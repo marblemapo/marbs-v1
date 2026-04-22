@@ -22,6 +22,7 @@ export function CurrencySelect({
   defaultValue = "USD",
   placeholder = "USD",
   onValueChange,
+  hideLabel = false,
 }: {
   id?: string;
   name?: string;
@@ -35,6 +36,14 @@ export function CurrencySelect({
    * should normalize with trim().toUpperCase() before use.
    */
   onValueChange?: (value: string) => void;
+  /**
+   * Suppresses the "USD · US Dollar" helper line under the field. In row
+   * layouts where this picker sits next to other inputs (onboarding cash
+   * rows), the helper pushes the picker's visual height past the sibling
+   * and breaks vertical alignment — the flag reads as "dropped to the
+   * bottom." Hide it in those cases; keep it in single-field layouts.
+   */
+  hideLabel?: boolean;
 }) {
   const [query, setQuery] = useState(defaultValue);
   const [open, setOpen] = useState(false);
@@ -153,7 +162,7 @@ export function CurrencySelect({
       </button>
 
       {/* Exact match hint — so user can see the name of what they've typed */}
-      {exactMatch && !open && (
+      {exactMatch && !open && !hideLabel && (
         <div className="text-xs text-text-muted mt-1">
           <span className="text-text-secondary">{exactMatch.code}</span> ·{" "}
           {exactMatch.name}

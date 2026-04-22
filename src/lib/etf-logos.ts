@@ -1,17 +1,16 @@
 /**
  * ETF ticker → issuer domain map.
  *
- * Finnhub's free tier rarely returns logos for ETFs, and many don't have a
- * `weburl` we can hand to Clearbit. A curated mapping of the top ~100 ETFs
- * to their issuer's domain gets us the right brand logo (iShares orange,
- * Vanguard red, etc) without per-ticker custom assets.
+ * Finnhub's free tier rarely returns logos for ETFs. A curated mapping of
+ * the top ~100 ETFs to their issuer's domain gets us the right brand favicon
+ * (iShares orange, Vanguard red, etc) without per-ticker custom assets.
  *
- * When we find a match we build a Clearbit logo URL from the issuer
- * domain. Covers the 80% of retail portfolios. Unknown tickers fall
- * through to the initials badge.
+ * We hand the domain to Google's favicon service at 128px. Clearbit's logo
+ * API was retired in December 2024; Google's s2/favicons is stable, free,
+ * no-auth, and returns crisp icons for any domain with a web presence.
  */
 
-// Issuer domains — Clearbit resolves these to crisp brand logos.
+// Issuer domains — Google s2 resolves these to the brand favicon at 128px.
 const VANGUARD = "vanguard.com";
 const ISHARES = "ishares.com";
 const SSGA = "ssga.com"; // State Street — SPY, DIA, etc.
@@ -103,5 +102,5 @@ const ETF_ISSUER: Record<string, string> = {
 export function etfLogoUrl(ticker: string): string | null {
   const upper = ticker.trim().toUpperCase();
   const domain = ETF_ISSUER[upper] ?? ETF_ISSUER[upper.split(".")[0]];
-  return domain ? `https://logo.clearbit.com/${domain}` : null;
+  return domain ? `https://www.google.com/s2/favicons?domain=${domain}&sz=128` : null;
 }
