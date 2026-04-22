@@ -1,13 +1,19 @@
-# marbs
+# marbs-v1
 
-**Privacy-first multi-asset net-worth tracker.** Manual entry, live prices, no bank logins.
+A single Next.js app that serves two sites from one codebase:
 
-- **Landing:** [marbs.io](https://marbs.io)
-- **App:** [wealth.marbs.io](https://wealth.marbs.io)
+- **[marbs.io](https://marbs.io)** — Marble's personal site.
+- **[wealth.marbs.io](https://wealth.marbs.io)** — **Wealth**, a privacy-first multi-asset net-worth tracker.
+
+`src/app/page.tsx` picks the right landing component based on the request host (wealth subdomain → `WealthLanding`, apex → `PersonalHome`). Icons, OG image, and magic-link branding follow the same split.
+
+The rest of this README is about **Wealth**, since that's where the product surface lives.
 
 ---
 
-## What it is
+## Wealth
+
+Privacy-first multi-asset net-worth tracker. Manual entry, live prices, no bank logins.
 
 One dashboard for everything you own — stocks, ETFs, crypto, cash across any currency — without handing over bank credentials. You log what you hold, we fetch live prices, you get a single number.
 
@@ -21,7 +27,7 @@ Built for tech workers who are multi-asset, internationally mobile, and allergic
 - **One glance.** Net-worth hero is the headline. Daily delta is paired 1-to-1 (no "partial-previous" distortion).
 - **Public-chain, read-only wallets.** Paste an EVM address (or ENS) to auto-sync on-chain balances across six chains. No signing, no custody, no spend paths in code.
 
-## Features
+### Features
 
 - **Net-worth hero** — big number, live tick, accurate day delta, currency switcher
 - **Asset list** — equities, ETFs, crypto, cash; per-row price + value
@@ -30,7 +36,7 @@ Built for tech workers who are multi-asset, internationally mobile, and allergic
 - **Wallet sync** — paste any EVM address or ENS name; we read balances across **Ethereum, Base, Arbitrum, Optimism, Polygon, BNB Chain** and dedupe cross-chain tokens by CoinGecko slug (USDT on ETH + BSC → one "USDT" row)
 - **Multi-wallet** — connect any number of wallets in one dialog, each with an optional label
 - **Goals + milestones** — schema ready, UI partial
-- **Magic-link auth** — Supabase OTP, no passwords, custom-branded email
+- **Magic-link auth** — Supabase OTP, no passwords, custom-branded email via Resend
 - **Hard delete** — nuke your account and every row it touched in one click (cascades through every FK)
 
 ## Tech stack
@@ -41,6 +47,7 @@ Built for tech workers who are multi-asset, internationally mobile, and allergic
 | Language | TypeScript 5, strict |
 | Styling | Tailwind v4, shadcn/ui, `@base-ui/react` |
 | DB + auth | Supabase (Postgres 15+, RLS, magic-link auth) |
+| Transactional email | Resend (custom SMTP plugged into Supabase) |
 | Hosting | Vercel |
 | Price data | Finnhub (equities) · Yahoo Finance (fallback + FX) · CoinGecko (crypto) · ECB (FX) |
 | On-chain | [viem](https://viem.sh) for ENS · Alchemy for balance reads across 6 EVM chains |
@@ -51,16 +58,18 @@ Built for tech workers who are multi-asset, internationally mobile, and allergic
 ```
 src/
   app/
-    page.tsx           landing
-    dashboard/         authed — net worth hero, asset list, wallets, delete
-    onboarding/        first-time wizard
+    page.tsx           host-split landing (marbs.io personal | wealth.marbs.io Wealth)
+    dashboard/         Wealth dashboard — net worth hero, asset list, wallets, delete
+    onboarding/        Wealth first-time wizard
     login/             magic-link sign-in
     auth/callback/     Supabase OAuth/OTP return
-    notebook/          blog posts
+    notebook/          Marble's blog posts
     actions/           server actions: assets, wallets, account, profile
     api/               search, newsletter subscribe, auth
-    icons/, apple-icons/, opengraph-image.tsx   dynamic branded PNGs
+    icons/, apple-icons/, opengraph-image.tsx   per-host branded PNGs
   components/
+    personal-home.tsx            marbs.io landing
+    wealth-landing.tsx           wealth.marbs.io landing
     networth-hero.tsx            the big number
     assets-list.tsx, add-asset-drawer.tsx, edit-asset-drawer.tsx
     connected-wallets-section.tsx, connect-wallet-dialog.tsx
@@ -80,7 +89,7 @@ src/
 supabase/
   migrations/                    initial schema, wallet tables, cash rename, etc.
   email-templates/magic-link.html
-DESIGN.md                        design system: typography, color, motion
+DESIGN.md                        Wealth design system: typography, color, motion
 AGENTS.md                        agent-mode guardrails
 ```
 
@@ -95,6 +104,8 @@ pnpm install
 cp .env.example .env.local   # fill the values (see below)
 pnpm dev
 ```
+
+Visit `http://localhost:3000` for the personal site, or `http://localhost:3000/?host=wealth` to preview the Wealth landing locally (the query param bypasses the host check).
 
 ### Environment variables
 
@@ -114,7 +125,7 @@ ALCHEMY_API_KEY=…
 
 ### Database
 
-Apply migrations from `supabase/migrations/` in order via the Supabase SQL editor or CLI. Current migrations:
+Apply migrations from `supabase/migrations/` in order via the Supabase SQL editor or CLI:
 
 - `20260416000001_initial_schema.sql` — profiles, assets, transactions, balance_snapshots, goals, milestones, price_cache, fx_rates + RLS
 - `20260416000002_signup_display_name.sql`
@@ -124,9 +135,15 @@ Apply migrations from `supabase/migrations/` in order via the Supabase SQL edito
 - `20260421000001_connected_wallets.sql` — wallet tables, token slug cache, RLS
 - `20260421000002_multi_chain_wallets.sql` — enum values for Base/ARB/OP/Polygon/BSC; wallet key drops the chain column
 
-### Email template
+### Transactional email (Supabase → Resend)
 
-Supabase → Authentication → Email Templates → Magic Link. Paste the contents of [`supabase/email-templates/magic-link.html`](supabase/email-templates/magic-link.html) — the in-repo file is source-of-truth; the live template has to be synced manually.
+Supabase's built-in SMTP has aggressive rate limits — switch to Resend for anything beyond smoke testing:
+
+1. Verify your sender domain on Resend. Add the DKIM + SPF + MX records at your DNS host (Cloudflare etc) with **Proxy status "DNS only"**.
+2. Supabase → Authentication → Email → Custom SMTP:
+   - Host `smtp.resend.com`, Port `465`, Username `resend`, Password `<Resend API key>`
+   - Sender email on your verified domain (e.g. `noreply@marbs.io`), Sender name `Wealth`
+3. Paste [`supabase/email-templates/magic-link.html`](supabase/email-templates/magic-link.html) into Supabase → Authentication → Email Templates → Magic Link. The in-repo file is source-of-truth; the live template has to be synced manually.
 
 ## Design system
 
@@ -140,12 +157,12 @@ See [`DESIGN.md`](DESIGN.md). Short version:
 
 ## Deployment
 
-Pushes to `main` auto-deploy to production via Vercel. PRs get preview deployments. Preview deployments may require disabling Vercel's Deployment Protection in project settings for anonymous reviewers.
+Pushes to `main` auto-deploy to production via Vercel. Vercel serves both `marbs.io` (apex) and `wealth.marbs.io` (subdomain) from the same deployment — the app resolves the variant per request at `src/app/page.tsx`. PRs get preview deployments; toggle off Vercel Deployment Protection in project settings if you want anonymous reviewers.
 
 Don't forget the two manual steps a fresh deploy doesn't cover:
 
 1. Apply any new Supabase migrations in order.
-2. Sync the magic-link email template if it changed.
+2. Sync the magic-link email template in Supabase if it changed.
 
 ## Conventions
 
