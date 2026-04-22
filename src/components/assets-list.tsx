@@ -163,8 +163,8 @@ export function AssetsList({ rows }: { rows: AssetListRow[] }) {
                       ? `@ ${formatMoney(displayPrice, displayCurrency)}`
                       : "No price yet"}
                   {usingNative && !sameCurrency && (
-                    <span className="ml-1.5 text-loss/80 normal-case tracking-normal">
-                      · native
+                    <span className="ml-1.5 text-text-muted normal-case tracking-normal">
+                      · shown in {r.native_currency} (no FX)
                     </span>
                   )}
                 </div>

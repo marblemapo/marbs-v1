@@ -1,25 +1,30 @@
 "use client";
 
 /**
- * Onboarding "portfolio assembly" overlay.
+ * Onboarding "portfolio assembly" takeover.
  *
- * Design goal: quiet-luxury finance aesthetic (think Sequence Markets) —
- * typography-first, slow motion, negative space. The previous orbital
- * particle version felt like a product demo; this one feels like the
- * moment before a market opens.
+ * Full-viewport cinematic overlay. Body scroll is locked while mounted so
+ * the user can't scroll past it — the whole screen is hijacked.
  *
- *   [ tiny pulsing eyebrow ]
- *   Big headline, typed one char at a time, with a blinking aqua caret
- *   · · ·
- *   scrolling ticker tape
- *   · · ·
- *   hairline progress bar + count
+ * Layering (back → front):
+ *   1. Dark wash + subtle aqua radial
+ *   2. Soft grid pattern (terminal vibe)
+ *   3. Horizontal scan line sweeping top-to-bottom (like a radar refresh)
+ *   4. Constellation — SVG web of data nodes rotating slowly, with
+ *      connecting hairlines. Node count adapts to sync progress.
+ *   5. Currency-symbol orbs floating around the middle ($ € £ ¥ ₩ ₿)
+ *   6. Typed headline with blinking aqua caret
+ *   7. Scrolling ticker tape
+ *   8. Hairline progress + N / M
  *
- * z-[100] so it sits above any stray Sheet/Dialog portals.
+ * All CSS keyframes + inline SVG. No animation library.
  */
 
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
+
+const CURRENCY_GLYPHS = ["$", "€", "£", "¥", "₩", "₿"] as const;
+const SCAN_DURATION_MS = 3600;
 
 export function PortfolioAssembly({
   total,
@@ -34,38 +39,126 @@ export function PortfolioAssembly({
   const message = complete ? "Net worth assembled." : "Gathering your net worth";
   const typed = useTypedText(message);
 
+  // Lock body scroll while the overlay is mounted so the "takeover" is real.
+  useEffect(() => {
+    const prevOverflow = document.body.style.overflow;
+    const prevPaddingRight = document.body.style.paddingRight;
+    // Compensate for the scrollbar disappearing so layout doesn't shift.
+    const scrollbarWidth =
+      window.innerWidth - document.documentElement.clientWidth;
+    document.body.style.overflow = "hidden";
+    if (scrollbarWidth > 0) {
+      document.body.style.paddingRight = `${scrollbarWidth}px`;
+    }
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      document.body.style.paddingRight = prevPaddingRight;
+    };
+  }, []);
+
   return (
     <div
-      className="fixed inset-0 z-[100] flex flex-col items-center justify-center px-6"
+      className="fixed inset-0 z-[100] overflow-hidden flex flex-col items-center justify-center px-6"
       style={{
         background:
-          "radial-gradient(ellipse 70% 50% at 50% 40%, rgba(127,255,212,0.06), transparent 70%), rgba(10,10,10,0.94)",
+          "radial-gradient(ellipse 70% 50% at 50% 45%, rgba(127,255,212,0.08), transparent 70%), rgba(8,10,10,0.96)",
         backdropFilter: "blur(14px)",
         WebkitBackdropFilter: "blur(14px)",
       }}
     >
       <style>{css}</style>
 
-      {/* Eyebrow */}
+      {/* L2: subtle grid */}
       <div
-        className="mb-10 font-plex text-[11px] tracking-[0.3em] uppercase text-text-muted"
-        style={{ animation: "pa-fade 600ms ease-out 200ms backwards" }}
+        aria-hidden
+        className="absolute inset-0 opacity-[0.08]"
+        style={{
+          backgroundImage:
+            "linear-gradient(rgba(127,255,212,0.4) 1px, transparent 1px), linear-gradient(90deg, rgba(127,255,212,0.4) 1px, transparent 1px)",
+          backgroundSize: "56px 56px",
+          maskImage:
+            "radial-gradient(ellipse 70% 80% at 50% 50%, black, transparent 75%)",
+          WebkitMaskImage:
+            "radial-gradient(ellipse 70% 80% at 50% 50%, black, transparent 75%)",
+        }}
+      />
+
+      {/* L3: horizontal scan line */}
+      <div
+        aria-hidden
+        className="absolute inset-x-0 h-[2px] pointer-events-none"
+        style={{
+          background:
+            "linear-gradient(90deg, transparent, rgba(127,255,212,0.6), transparent)",
+          boxShadow: "0 0 20px rgba(127,255,212,0.5)",
+          animation: `pa-scan ${SCAN_DURATION_MS}ms ease-in-out infinite`,
+        }}
+      />
+
+      {/* L4: constellation */}
+      <svg
+        aria-hidden
+        viewBox="-200 -200 400 400"
+        className="absolute w-[min(88vw,640px)] h-[min(88vw,640px)] pointer-events-none"
+        style={{ filter: "drop-shadow(0 0 12px rgba(127,255,212,0.15))" }}
+      >
+        <defs>
+          <linearGradient id="pa-link" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stopColor="rgba(127,255,212,0)" />
+            <stop offset="50%" stopColor="rgba(127,255,212,0.5)" />
+            <stop offset="100%" stopColor="rgba(127,255,212,0)" />
+          </linearGradient>
+        </defs>
+        <g style={{ animation: "pa-spin-slow 60s linear infinite" }}>
+          <ConstellationLines />
+          <ConstellationNodes />
+        </g>
+      </svg>
+
+      {/* L5: orbiting currency symbols */}
+      <div
+        aria-hidden
+        className="absolute w-[min(96vw,760px)] h-[min(96vw,760px)] pointer-events-none select-none"
+        style={{ animation: "pa-spin-slow 80s linear infinite reverse" }}
+      >
+        {CURRENCY_GLYPHS.map((glyph, i) => {
+          const angle = (i / CURRENCY_GLYPHS.length) * 360;
+          return (
+            <span
+              key={glyph}
+              className="absolute left-1/2 top-1/2 font-display text-text-muted/40 text-xl sm:text-2xl tabular-nums"
+              style={{
+                transform: `translate(-50%, -50%) rotate(${angle}deg) translateY(-44%) rotate(${-angle}deg)`,
+                animation: `pa-float ${4 + (i % 3)}s ease-in-out ${i * 0.3}s infinite`,
+              }}
+            >
+              {glyph}
+            </span>
+          );
+        })}
+      </div>
+
+      {/* L6: eyebrow + headline */}
+      <div
+        className="relative z-10 mb-8 font-plex text-[11px] tracking-[0.3em] uppercase text-text-muted flex items-center gap-2"
+        style={{ animation: "pa-fade 600ms ease-out 100ms backwards" }}
       >
         <span
           aria-hidden
-          className="inline-block w-1.5 h-1.5 rounded-full bg-[#7FFFD4] mr-2 align-middle"
+          className="inline-block w-1.5 h-1.5 rounded-full bg-[#7FFFD4]"
           style={{
             boxShadow: "0 0 10px #7FFFD4",
             animation: "pa-pulse 1.6s ease-in-out infinite",
           }}
         />
-        {complete ? "Ready" : "Synchronizing"}
+        <span>{complete ? "Ready" : "Synchronizing"}</span>
+        <span className="text-text-muted/40">·</span>
+        <span className="tabular-nums">{pct.toString().padStart(2, "0")}%</span>
       </div>
 
-      {/* Typed headline */}
       <h1
         className={cn(
-          "font-display font-bold tracking-[-0.03em] text-center leading-[1.05]",
+          "relative z-10 font-display font-bold tracking-[-0.03em] text-center leading-[1.05]",
           "text-[40px] sm:text-[56px] md:text-[72px] lg:text-[88px]",
           "max-w-[900px]",
         )}
@@ -82,9 +175,9 @@ export function PortfolioAssembly({
         />
       </h1>
 
-      {/* Ticker tape */}
+      {/* L7: ticker tape */}
       <div
-        className="mt-14 w-full max-w-[520px] overflow-hidden select-none"
+        className="relative z-10 mt-12 w-full max-w-[520px] overflow-hidden select-none"
         style={{
           maskImage:
             "linear-gradient(90deg, transparent, black 20%, black 80%, transparent)",
@@ -108,10 +201,12 @@ export function PortfolioAssembly({
               "·",
               "ON-CHAIN",
               "·",
+              "GLOBAL",
+              "·",
             ].map((t, i) => (
               <span
                 key={`${copy}-${i}`}
-                className={t === "·" ? "text-text-muted/40" : ""}
+                className={t === "·" ? "text-text-muted/30" : ""}
               >
                 {t}
               </span>
@@ -120,8 +215,8 @@ export function PortfolioAssembly({
         </div>
       </div>
 
-      {/* Hairline progress */}
-      <div className="mt-16 w-full max-w-[360px] flex flex-col gap-3">
+      {/* L8: hairline progress */}
+      <div className="relative z-10 mt-12 w-full max-w-[360px] flex flex-col gap-2.5">
         <div className="relative h-px bg-white/[0.08] overflow-hidden">
           <div
             className="absolute inset-y-0 left-0 bg-[#7FFFD4] transition-[width] duration-[600ms] ease-out"
@@ -143,8 +238,83 @@ export function PortfolioAssembly({
 }
 
 /**
- * Types the target text one character at a time, ~42ms per char. Resets
- * when target changes (e.g. "Gathering…" → "Net worth assembled.").
+ * Six-node web (pentagon + center), connecting lines faded at the ends.
+ * Pure visual — doesn't reflect real state. The point is to feel like a
+ * data graph, not be one.
+ */
+function ConstellationNodes() {
+  const nodes = nodePositions();
+  return (
+    <>
+      {nodes.map(([x, y], i) => (
+        <g key={i}>
+          <circle
+            cx={x}
+            cy={y}
+            r="3"
+            fill="#7FFFD4"
+            style={{
+              animation: `pa-pulse 2.4s ease-in-out ${i * 0.35}s infinite`,
+              filter: "drop-shadow(0 0 6px #7FFFD4)",
+            }}
+          />
+        </g>
+      ))}
+    </>
+  );
+}
+
+function ConstellationLines() {
+  const nodes = nodePositions();
+  const center = nodes[0];
+  return (
+    <>
+      {nodes.slice(1).map(([x, y], i) => (
+        <line
+          key={`c-${i}`}
+          x1={center[0]}
+          y1={center[1]}
+          x2={x}
+          y2={y}
+          stroke="url(#pa-link)"
+          strokeWidth="0.6"
+        />
+      ))}
+      {nodes.slice(1).map(([x, y], i, arr) => {
+        const next = arr[(i + 1) % arr.length];
+        return (
+          <line
+            key={`r-${i}`}
+            x1={x}
+            y1={y}
+            x2={next[0]}
+            y2={next[1]}
+            stroke="url(#pa-link)"
+            strokeWidth="0.4"
+          />
+        );
+      })}
+    </>
+  );
+}
+
+function nodePositions(): Array<[number, number]> {
+  const positions: Array<[number, number]> = [[0, 0]];
+  const ringRadius = 130;
+  const ringCount = 5;
+  for (let i = 0; i < ringCount; i++) {
+    const angle = (i / ringCount) * Math.PI * 2 - Math.PI / 2;
+    positions.push([
+      Math.cos(angle) * ringRadius,
+      Math.sin(angle) * ringRadius,
+    ]);
+  }
+  return positions;
+}
+
+/**
+ * Types the target text one character at a time. Resets when target changes
+ * (e.g. "Gathering…" → "Net worth assembled.").
  */
 function useTypedText(target: string) {
   const [shown, setShown] = useState("");
@@ -166,7 +336,7 @@ function useTypedText(target: string) {
 const css = `
   @keyframes pa-pulse {
     0%, 100% { opacity: 1; transform: scale(1); }
-    50%      { opacity: 0.7; transform: scale(1.35); }
+    50%      { opacity: 0.6; transform: scale(1.4); }
   }
   @keyframes pa-caret {
     0%, 49%   { opacity: 1; }
@@ -179,5 +349,19 @@ const css = `
   @keyframes pa-marquee {
     from { transform: translateX(0); }
     to   { transform: translateX(-50%); }
+  }
+  @keyframes pa-spin-slow {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+  }
+  @keyframes pa-scan {
+    0%   { transform: translateY(-100vh); opacity: 0; }
+    10%  { opacity: 1; }
+    90%  { opacity: 1; }
+    100% { transform: translateY(100vh); opacity: 0; }
+  }
+  @keyframes pa-float {
+    0%, 100% { opacity: 0.35; }
+    50%      { opacity: 0.85; }
   }
 `;

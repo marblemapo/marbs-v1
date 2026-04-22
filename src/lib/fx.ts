@@ -1,45 +1,94 @@
 /**
- * FX rates via Frankfurter (ECB, free, no API key).
- *   GET https://api.frankfurter.dev/v1/latest?from=USD&to=EUR,GBP,HKD,JPY
- *   → { base: "USD", date: "2026-04-17", rates: { EUR: 0.85, GBP: 0.72, ... } }
+ * FX rates — primary source is Frankfurter (ECB, free, no API key).
+ * Frankfurter covers ~30 major currencies (USD, EUR, GBP, HKD, JPY, SGD, KRW,
+ * CNY, INR, AUD, CAD, CHF, SEK, NOK, DKK, etc).
  *
- * Covers 30+ major fiat currencies (USD, EUR, GBP, HKD, JPY, SGD, KRW, CNY,
- * INR, AUD, CAD, CHF, etc.). Good enough for the ICP we're targeting.
+ * Any quote currency Frankfurter doesn't return (e.g. TWD, PHP, SAR, AED) is
+ * topped up from Yahoo Finance's FX endpoint — `{BASE}{QUOTE}=X`. Yahoo
+ * covers every fiat pair we care about in Asia / MENA.
  *
- * Not covered (as of writing): TWD, HKD-pegged cryptos, exotic EM currencies.
- * Callers should treat null as "can't convert; show native".
+ * Both are cached 6 hours.
  */
 
 /**
  * Fetch rates for converting FROM `base` TO each of `quotes`. Returns a map
  * with `base` always included as 1, so downstream code can do
  * `amount * rates[to] / rates[from]` for any pair.
- *
- * Cache: 6 hours. Frankfurter updates daily with ECB data.
  */
 export async function fetchFxRates(
   base: string,
   quotes: string[],
 ): Promise<Record<string, number> | null> {
+  const baseUp = base.toUpperCase();
   const uniqueQuotes = Array.from(
-    new Set(quotes.map((c) => c.toUpperCase()).filter((c) => c !== base)),
+    new Set(quotes.map((c) => c.toUpperCase()).filter((c) => c !== baseUp)),
   );
   if (uniqueQuotes.length === 0) {
-    // No conversion needed — just the identity rate.
-    return { [base.toUpperCase()]: 1 };
+    return { [baseUp]: 1 };
   }
 
-  const url = `https://api.frankfurter.dev/v1/latest?from=${encodeURIComponent(
-    base,
-  )}&to=${uniqueQuotes.join(",")}`;
-
+  // Primary: Frankfurter (ECB).
+  let primary: Record<string, number> = {};
   try {
-    const res = await fetch(url, { next: { revalidate: 21600 } }); // 6h
+    const url = `https://api.frankfurter.dev/v1/latest?from=${encodeURIComponent(
+      base,
+    )}&to=${uniqueQuotes.join(",")}`;
+    const res = await fetch(url, { next: { revalidate: 21600 } });
+    if (res.ok) {
+      const data = await res.json();
+      primary = (data?.rates ?? {}) as Record<string, number>;
+    }
+  } catch {
+    // Fall through — we'll see what Yahoo can cover.
+  }
+
+  const missing = uniqueQuotes.filter((q) => !primary[q]);
+  const secondary: Record<string, number> = {};
+
+  if (missing.length > 0) {
+    // Fall back to Yahoo one pair at a time. The free endpoint returns a
+    // chart bar with `meta.regularMarketPrice` for any `{BASE}{QUOTE}=X`.
+    const results = await Promise.all(
+      missing.map(async (q) => {
+        const rate = await fetchYahooFxRate(baseUp, q);
+        return [q, rate] as const;
+      }),
+    );
+    for (const [q, rate] of results) {
+      if (rate && Number.isFinite(rate) && rate > 0) {
+        secondary[q] = rate;
+      }
+    }
+  }
+
+  const rates = { [baseUp]: 1, ...primary, ...secondary };
+
+  // If we couldn't resolve ANYTHING (both sources failed outright), return
+  // null so the caller falls back to showing native amounts per asset.
+  if (Object.keys(rates).length <= 1 && uniqueQuotes.length > 0) return null;
+
+  return rates;
+}
+
+const YAHOO_UA =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 " +
+  "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+
+/** Single-pair FX rate from Yahoo Finance. Returns null on any failure. */
+async function fetchYahooFxRate(
+  base: string,
+  quote: string,
+): Promise<number | null> {
+  try {
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${base}${quote}=X?interval=1d&range=5d`;
+    const res = await fetch(url, {
+      headers: { "User-Agent": YAHOO_UA },
+      next: { revalidate: 21600 }, // 6h
+    });
     if (!res.ok) return null;
     const data = await res.json();
-    const rates = (data?.rates ?? {}) as Record<string, number>;
-    // Frankfurter omits the base from its `rates` object; add it as 1.
-    return { [base.toUpperCase()]: 1, ...rates };
+    const price = data?.chart?.result?.[0]?.meta?.regularMarketPrice;
+    return typeof price === "number" ? price : null;
   } catch {
     return null;
   }
