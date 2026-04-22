@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { refreshMissingLogos } from "@/app/actions/assets";
 import { Button } from "@/components/ui/button";
 import { AddAssetDrawer } from "@/components/add-asset-drawer";
 import { DisplayNameEditor } from "@/components/display-name-editor";
@@ -46,6 +48,25 @@ export default async function DashboardPage() {
     .from("connected_wallets")
     .select("id, address, ens_name, label, last_synced_at")
     .order("created_at", { ascending: true });
+
+  // Post-response: backfill any stock/ETF rows that are missing a logo.
+  // Finnhub's free tier often lags on new listings (e.g. CRCL post-IPO)
+  // and doesn't cover most ETFs at all, so earlier rows were saved with
+  // `metadata.logo = null`. The action is a no-op once every row has one,
+  // and Finnhub responses are cached 24h so repeat runs are nearly free.
+  const missingLogo = (assets ?? []).some((a) => {
+    if (a.asset_class !== "equity" && a.asset_class !== "etf") return false;
+    const meta = (a.metadata ?? {}) as Record<string, unknown>;
+    return !meta.logo || typeof meta.logo !== "string";
+  });
+  if (missingLogo) {
+    after(async () => {
+      const res = await refreshMissingLogos();
+      if (res.ok && res.updated > 0) {
+        console.log(`[dashboard] backfilled ${res.updated} asset logo(s)`);
+      }
+    });
+  }
 
   const assetIds = (assets ?? []).map((a) => a.id);
 

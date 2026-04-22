@@ -11,6 +11,7 @@ import {
   type Quote,
 } from "@/lib/prices";
 import { resolveCoinGeckoSlug } from "@/lib/crypto-slugs";
+import { etfLogoUrl } from "@/lib/etf-logos";
 
 type AssetClass = "equity" | "etf" | "crypto" | "cash";
 type PriceSource = "yahoo" | "coingecko" | "finnhub" | "manual";
@@ -64,6 +65,62 @@ export async function updateAssetQuantity(
 
   revalidatePath("/dashboard");
   return { ok: true };
+}
+
+/**
+ * Backfill missing logos on every asset the user owns that doesn't have one.
+ *
+ * Runs Finnhub profile2 (with Clearbit-via-weburl + ETF-issuer fallbacks
+ * inside `fetchFinnhubProfile` + the ETF map) for each stock/ETF, and
+ * updates `assets.metadata.logo` in place. Crypto/cash rows are skipped —
+ * their logo paths run elsewhere.
+ *
+ * Safe to call repeatedly; only touches rows where `metadata.logo` is
+ * currently null/empty.
+ */
+export async function refreshMissingLogos(): Promise<
+  { ok: true; updated: number } | { ok: false; error: string }
+> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not signed in" };
+
+  const { data: rows, error } = await supabase
+    .from("assets")
+    .select("id, symbol, external_id, asset_class, metadata")
+    .in("asset_class", ["equity", "etf"]);
+  if (error) return { ok: false, error: error.message };
+
+  const targets = (rows ?? []).filter((r) => {
+    const meta = (r.metadata ?? {}) as Record<string, unknown>;
+    return !meta.logo || typeof meta.logo !== "string";
+  });
+
+  let updated = 0;
+  await Promise.all(
+    targets.map(async (r) => {
+      const ticker = r.external_id ?? r.symbol;
+      if (!ticker) return;
+
+      let logo: string | null = null;
+      const profile = await fetchFinnhubProfile(ticker);
+      if (profile?.logo) logo = profile.logo;
+      if (!logo) logo = etfLogoUrl(ticker);
+      if (!logo) return;
+
+      const nextMeta = { ...(r.metadata as Record<string, unknown>), logo };
+      const { error: upErr } = await supabase
+        .from("assets")
+        .update({ metadata: nextMeta })
+        .eq("id", r.id);
+      if (!upErr) updated += 1;
+    }),
+  );
+
+  revalidatePath("/dashboard");
+  return { ok: true, updated };
 }
 
 /**
@@ -214,6 +271,15 @@ export async function addAsset(
   // row. Upgrade the URL to /small/ (50px) with a simple path swap.
   if (input.priceSource === "coingecko" && logoUrl?.includes("/thumb/")) {
     logoUrl = logoUrl.replace("/thumb/", "/small/");
+  }
+
+  // Last-resort logo fallback for ETFs / recently-IPO'd stocks. Finnhub +
+  // Clearbit-via-weburl already ran; if both came up empty, try our curated
+  // ETF ticker → issuer domain map (Vanguard, iShares, SPDR, etc.). Covers
+  // VOO, QQQ, SPY, IVV, etc. out of the box.
+  if (!logoUrl && (input.assetClass === "equity" || input.assetClass === "etf")) {
+    const candidate = etfLogoUrl(normalizedSymbol ?? externalId ?? "");
+    if (candidate) logoUrl = candidate;
   }
 
   // --- Duplicate detection result ---
