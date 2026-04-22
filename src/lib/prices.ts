@@ -55,8 +55,13 @@ export function inferCurrencyFromTicker(ticker: string): string {
  * logo URL on asset creation. Also returns canonical currency and name;
  * callers can override our suffix-based inference when present.
  *
- * Returns null if Finnhub doesn't have a profile for this symbol (common for
- * non-US tickers outside the premium plan).
+ * Logo fallback: Finnhub's free tier often has no logo for recently-IPO'd
+ * tickers (e.g. CRCL). When the `logo` field is empty but `weburl` is set,
+ * we synthesize a Clearbit logo URL from the domain — auth-less, cached by
+ * Clearbit's CDN, covers essentially every public company.
+ *
+ * Returns null if Finnhub doesn't have a profile for this symbol at all
+ * (common for non-US tickers outside the premium plan).
  */
 export async function fetchFinnhubProfile(symbol: string): Promise<{
   logo: string | null;
@@ -74,12 +79,32 @@ export async function fetchFinnhubProfile(symbol: string): Promise<{
     if (!res.ok) return null;
     const data = await res.json();
     if (!data || Object.keys(data).length === 0) return null;
+
+    let logo: string | null = data.logo || null;
+    if (!logo && typeof data.weburl === "string" && data.weburl) {
+      const domain = extractDomain(data.weburl);
+      if (domain) logo = `https://logo.clearbit.com/${domain}`;
+    }
+
     return {
-      logo: data.logo || null,
+      logo,
       name: data.name || null,
       currency: data.currency || null,
       exchange: data.exchange || null,
     };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * "https://www.circle.com/en-us/" → "circle.com". Returns null if we can't
+ * parse it — caller falls back to initials in that case.
+ */
+function extractDomain(weburl: string): string | null {
+  try {
+    const u = new URL(weburl);
+    return u.hostname.replace(/^www\./, "");
   } catch {
     return null;
   }
