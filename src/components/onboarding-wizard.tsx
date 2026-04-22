@@ -67,7 +67,7 @@ function StockLikeRow({
           placeholder={
             uiClass === "crypto"
               ? "Type to search — btc, eth, solana…"
-              : "Type to search — tesla, apple, 0700…"
+              : "Type to search — tesla, 0700.HK, tencent…"
           }
           onChange={(sel, raw) =>
             onPatch(row.id, { picked: sel, rawSymbol: raw })
