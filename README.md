@@ -149,7 +149,7 @@ Supabase's built-in SMTP has aggressive rate limits — switch to Resend for any
 
 See [`DESIGN.md`](DESIGN.md). Short version:
 
-- Warm dark, Robinhood-inspired minimal
+- Warm dark, minimal, data-forward
 - Accent: aqua `#7FFFD4` (live), gold `#f5c518` (on-brand)
 - Semantic: gain `#00C805`, loss `#FF5000`
 - Space Grotesk for display/numbers (tabular-nums), Inter for body, Geist Mono for code

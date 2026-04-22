@@ -7,10 +7,10 @@
 - **Project type:** Web app (dashboard)
 
 ## Aesthetic Direction
-- **Direction:** Robinhood-inspired minimal, warm dark
+- **Direction:** Warm dark, minimal, data-forward
 - **Decoration level:** Minimal — typography and data do the work
 - **Mood:** Calm confidence. Like checking a premium watch, not a trading terminal.
-- **Reference sites:** robinhood.com (layout density, pill selectors, chart style), marbs.io (identity)
+- **Reference sites:** marbs.io (identity)
 
 ## Typography
 - **Display/Hero:** Space Grotesk 700 — net-worth number, section titles, stat values
@@ -60,15 +60,15 @@
 - **Live indicator pill:** Green pulse dot + "Live" text, accent-dim bg. Only shown when Finnhub WebSocket is connected.
 - **Asset row:** Logo/ticker icon, symbol + name stacked left, sparkline middle, value + change right. Tap → detail.
 - **Allocation chart:** Horizontal stacked bar, one row per asset class, percentage labels.
-- **Category pills:** Robinhood-style horizontal scroll, border pills, active = filled white.
+- **Category pills:** Horizontal scroll, border pills, active = filled white.
 - **Milestone badge:** Pill shape, accent-dim bg, gold text, dot indicator, uppercase.
-- **CTA button:** Robinhood green, pill shape, full-width on forms, 700 weight.
+- **CTA button:** Aqua green, pill shape, full-width on forms, 700 weight.
 
 ## Decisions Log
 | Date | Decision | Rationale |
 |------|----------|-----------|
 | 2026-04-04 | Space Grotesk + Inter | Matches existing marbs.io fonts |
-| 2026-04-04 | Robinhood-inspired layout | More Robinhood DNA: pills, dense lists, dark bg |
+| 2026-04-04 | Dense-list layout | Pills, dense data rows, warm dark bg — retail brokerage ergonomics |
 | 2026-04-04 | Keep #f5c518 gold | Bright gold over refined #D4A843 |
 | 2026-04-04 | No serif fonts | SF/system sans preferred |
 | 2026-04-16 | Scope pivot v2 | From FIRE countdown to net-worth tracker. FIRE badge demoted to optional lens; net-worth hero is the new centerpiece. Ring component retired in v2 hero. |
