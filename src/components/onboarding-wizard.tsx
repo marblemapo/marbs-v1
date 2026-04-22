@@ -251,13 +251,21 @@ export function OnboardingWizard({
       labels.push(`${code} cash`);
     }
 
+    // Show the overlay synchronously *before* entering the transition.
+    // State updates inside the sync portion of `startTransition(cb)` are
+    // marked non-urgent and React can defer them — when saves are fast
+    // (hot Finnhub cache, ~300ms) the overlay was never painting at all.
+    // Calling setProgress here, outside the transition, guarantees one
+    // urgent render that mounts PortfolioAssembly immediately.
+    setProgress({ total: inputs.length, done: 0 });
+
     startTransition(async () => {
-      // Fire all in parallel. Finnhub free tier = 60 rpm which comfortably
-      // covers ~10 rows. CoinGecko is generous for crypto.
-      //
-      // Each promise bumps `done` on settle — drives the live progress
-      // counter in the PortfolioAssembly overlay.
-      setProgress({ total: inputs.length, done: 0 });
+      // Floor the overlay at 2.5s so the animation always feels
+      // intentional, even if every addAsset hits cached data and
+      // returns in under 500ms.
+      const MIN_DISPLAY_MS = 2500;
+      const startedAt = Date.now();
+
       const results = await Promise.all(
         inputs.map((i) =>
           addAsset(i).finally(() =>
@@ -276,9 +284,13 @@ export function OnboardingWizard({
         }));
 
       if (failed.length === 0) {
-        // Give the assembly animation a beat to land on the "complete" state
-        // before the route change kills it — feels less abrupt.
-        await new Promise((r) => setTimeout(r, 600));
+        // Hold the overlay on the "complete" state for 1s, then respect
+        // the minimum display time if we got here too fast.
+        await new Promise((r) => setTimeout(r, 1000));
+        const remaining = MIN_DISPLAY_MS - (Date.now() - startedAt);
+        if (remaining > 0) {
+          await new Promise((r) => setTimeout(r, remaining));
+        }
         router.push("/dashboard");
         router.refresh();
         return;
