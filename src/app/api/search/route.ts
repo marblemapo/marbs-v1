@@ -5,33 +5,35 @@ import { fetchFinnhubProfile } from "@/lib/prices";
 /**
  * Unified search endpoint for the add-asset autocomplete.
  *
- *   GET /api/search?q=tesla&class=equity  → Yahoo
+ *   GET /api/search?q=tesla&class=equity  → Yahoo Finance
+ *   GET /api/search?q=0700&class=equity   → Yahoo Finance (HKEX, TSE, etc)
  *   GET /api/search?q=btc&class=crypto    → CoinGecko
  *
- * Normalizes both shapes into a single SearchResult schema the client can
- * render the same way. Cached 5 minutes server-side so rapid typing doesn't
- * spam upstream.
+ * Stock search uses Yahoo Finance (not Finnhub) because Finnhub's free tier
+ * /search is US-biased and skips most HKEX / LSE / TSE / SZSE tickers.
+ * Yahoo covers every global exchange including the full ~2,600-row HK
+ * universe, resolves Chinese names, and returns `exchDisp` we can use to
+ * tag the row. Unofficial API but stable for a decade.
  *
- * Upstream shape samples:
- *   Yahoo:     { quotes: [{ symbol, shortname, longname, exchDisp, quoteType }] }
- *   CoinGecko: { coins:  [{ id, symbol, name, thumb, market_cap_rank }] }
+ * Logos still come from Finnhub's profile2 — it does cover HK tickers
+ * (0700.HK resolves to Tencent's profile with a logo), and for anything
+ * Finnhub doesn't have, we fall through to the Google-favicon-via-weburl
+ * chain inside `fetchFinnhubProfile`.
  */
 
 export type SearchResult = {
-  symbol: string;      // The ticker / display symbol (e.g. "TSLA", "BTC")
-  name: string;        // Human name (e.g. "Tesla, Inc.", "Bitcoin")
-  externalId: string;  // Provider lookup key — for Finnhub = symbol, for
-                       // CoinGecko = slug. Sent back to addAsset as-is.
+  symbol: string;      // The ticker / display symbol (e.g. "TSLA", "0700.HK")
+  name: string;        // Human name (e.g. "Tesla, Inc.", "Tencent Holdings Limited")
+  externalId: string;  // Provider lookup key — full suffixed ticker for Yahoo/Finnhub
+                       // (e.g. "0700.HK"), slug for CoinGecko. Sent back to addAsset.
   source: "finnhub" | "coingecko";
-  exchange: string | null;  // Where it trades. Null for crypto.
-  thumb: string | null;     // Optional icon URL (CoinGecko provides these).
+  exchange: string | null;  // Display label. "HKEX", "NASDAQ", etc. Null for crypto.
+  thumb: string | null;     // Optional icon URL.
   /**
-   * Normalized asset class. Set from Finnhub's `type` field so the UI can
-   * collapse the Stock/ETF distinction but we still record the right value
-   * in the DB.
-   *   Common Stock / ADR → "equity"
-   *   ETP / ETF          → "etf"
-   *   crypto always      → "crypto"
+   * Normalized asset class.
+   *   Yahoo EQUITY / other → "equity"
+   *   Yahoo ETF            → "etf"
+   *   crypto always        → "crypto"
    */
   assetClass: "equity" | "etf" | "crypto";
 };
@@ -40,109 +42,174 @@ export async function GET(request: NextRequest) {
   const q = request.nextUrl.searchParams.get("q")?.trim() ?? "";
   const klass = request.nextUrl.searchParams.get("class") ?? "equity";
 
-  if (q.length < 2) return NextResponse.json({ results: [] });
+  if (q.length < 1) return NextResponse.json({ results: [] });
 
   try {
     const results =
-      klass === "crypto" ? await searchCoinGecko(q) : await searchFinnhub(q);
+      klass === "crypto" ? await searchCoinGecko(q) : await searchStocks(q);
     return NextResponse.json({ results: results.slice(0, 8) });
   } catch {
     return NextResponse.json({ results: [] });
   }
 }
 
-async function searchFinnhub(q: string): Promise<SearchResult[]> {
-  const key = process.env.FINNHUB_API_KEY;
-  if (!key) return [];
-  const url = `https://finnhub.io/api/v1/search?q=${encodeURIComponent(q)}&token=${key}`;
-  const res = await fetch(url, { next: { revalidate: 300 } });
+const YAHOO_UA =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 " +
+  "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+
+/**
+ * Yahoo's exchange display strings are a bit rough ("HKSE", "TAI") — normalize
+ * to the labels retail users recognize.
+ */
+const EXCH_NORMALIZE: Record<string, string> = {
+  HKSE: "HKEX",
+  NMS: "NASDAQ",
+  NYQ: "NYSE",
+  NGM: "NASDAQ",
+  NCM: "NASDAQ",
+  PCX: "NYSE Arca",
+  ASE: "NYSE American",
+  LSE: "LSE",
+  TAI: "TWSE",
+  TWO: "TPEx",
+  SHH: "SSE",
+  SHZ: "SZSE",
+  TYO: "TSE",
+  JPX: "TSE",
+  KSC: "KRX",
+  KOE: "KOSDAQ",
+  ASX: "ASX",
+  SES: "SGX",
+  BSE: "BSE",
+  NSI: "NSE",
+  SAO: "B3",
+  MEX: "BMV",
+  GER: "XETRA",
+  TOR: "TSX",
+  VAN: "TSX-V",
+};
+
+async function searchStocks(q: string): Promise<SearchResult[]> {
+  // quotesCount=20 gives Yahoo room to surface non-US listings before
+  // trimming to our top-8. `region=US` keeps ranking stable across users.
+  const url =
+    `https://query2.finance.yahoo.com/v1/finance/search` +
+    `?q=${encodeURIComponent(q)}` +
+    `&quotesCount=20&newsCount=0&lang=en-US&region=US`;
+
+  const res = await fetch(url, {
+    headers: { "User-Agent": YAHOO_UA },
+    next: { revalidate: 300 },
+  });
   if (!res.ok) return [];
 
-  type FH = {
+  type YQ = {
     symbol?: string;
-    displaySymbol?: string;
-    description?: string;
-    type?: string;
+    shortname?: string;
+    longname?: string;
+    exchange?: string;       // short code: NMS, HKSE, TAI
+    exchDisp?: string;       // display name: "NasdaqGS", "HKSE"
+    quoteType?: string;      // "EQUITY" | "ETF" | "MUTUALFUND" | "CURRENCY" | ...
+    typeDisp?: string;
   };
   const data = await res.json();
-  const raw: FH[] = data?.result ?? [];
+  const quotes: YQ[] = data?.quotes ?? [];
 
-  // Prefer equity + ETF types; drop warrants, rights, preferreds.
-  const allowedTypes = new Set(["Common Stock", "ETP", "ETF", "ADR"]);
-
-  // Derive an exchange label from the symbol suffix so the UI can show it.
-  const EX_NAME: Record<string, string> = {
-    HK: "HKEX",
-    L: "LSE",
-    T: "TSE",
-    TO: "TSX", V: "TSX‑V",
-    DE: "XETRA",
-    PA: "Euronext",
-    AS: "Euronext",
-    MI: "Borsa IT",
-    MC: "BME",
-    SW: "SIX",
-    ST: "Nasdaq Stockholm",
-    CO: "Nasdaq Copenhagen",
-    OL: "Oslo",
-    AX: "ASX",
-    NZ: "NZX",
-    SI: "SGX",
-    KS: "KRX", KQ: "KOSDAQ",
-    SS: "SSE", SZ: "SZSE",
-    NS: "NSE", BO: "BSE",
-    SA: "B3",
-    MX: "BMV",
-    JK: "IDX",
-    BK: "SET",
-    TW: "TWSE",
-    F: "Frankfurt", MU: "München", DU: "Düsseldorf", BR: "Euronext",
-  };
-
-  // Top candidates only — we hit profile2 per result to resolve a logo,
-  // and Finnhub's free tier is 60 rpm. Capping at 8 keeps bursts safe;
-  // each profile2 response caches for 24h via Next's fetch cache, so
-  // repeat searches are free.
-  const filtered = raw
-    .filter((r) => r.symbol && (!r.type || allowedTypes.has(r.type)))
+  // Keep only tradeable equities + ETFs. Drop currencies, indices, options.
+  const filtered = quotes
+    .filter((q2) => {
+      if (!q2.symbol) return false;
+      const t = q2.quoteType?.toUpperCase();
+      return t === "EQUITY" || t === "ETF";
+    })
     .slice(0, 8);
 
-  // Kick off profile fetches in parallel. These give us real logos (Tesla
-  // red, NVIDIA green, Circle's cyan-purple). The fetchFinnhubProfile
-  // helper already does the "no logo → Google-favicon-via-weburl" fallback,
-  // so long-tail tickers without a Finnhub logo still get something.
+  // Fan out logo lookups. Finnhub's profile2 cache lives 24h, so repeat
+  // searches for common tickers are free. Bounded at 8 per search.
   const profiles = await Promise.all(
-    filtered.map((r) =>
-      fetchFinnhubProfile(r.symbol!).catch(() => null),
+    filtered.map((q2) =>
+      fetchFinnhubProfile(q2.symbol!).catch(() => null),
     ),
   );
 
-  return filtered.map((r, i) => {
-    const sym = (r.displaySymbol ?? r.symbol)!;
-    const parts = sym.split(".");
-    const suffix = parts.length > 1 ? parts[parts.length - 1].toUpperCase() : "";
-    const exchange = suffix ? EX_NAME[suffix] ?? suffix : "US";
-    const isEtf = r.type === "ETP" || r.type === "ETF";
+  return filtered.map((q2, i) => {
+    const sym = q2.symbol!;
+    const exchange = resolveExchange(sym, q2.exchange, q2.exchDisp);
+    const isEtf = q2.quoteType?.toUpperCase() === "ETF";
 
-    // Thumb priority: Finnhub profile's logo (or its own favicon fallback)
-    // → ETF issuer map → null. Curated map acts as a safety net for ETFs
-    // whose profile2 response is empty.
     const thumb =
       profiles[i]?.logo ??
-      etfLogoUrl(r.symbol!) ??
       etfLogoUrl(sym) ??
+      etfLogoUrl(sym.split(".")[0]) ??
       null;
 
     return {
       symbol: sym,
-      name: r.description ?? sym,
-      externalId: r.symbol!, // Finnhub wants the RAW symbol for /quote
+      name: q2.longname || q2.shortname || sym,
+      externalId: sym, // Yahoo + Finnhub both accept the suffixed ticker
       source: "finnhub" as const,
       exchange,
       thumb,
       assetClass: (isEtf ? "etf" : "equity") as "equity" | "etf",
     };
   });
+}
+
+/**
+ * Turn Yahoo's exchange hints into a user-visible label. Priority:
+ *   1. Ticker suffix (.HK, .L, .T) — unambiguous
+ *   2. Yahoo's normalized code (NMS, HKSE)
+ *   3. Yahoo's display string
+ *   4. "US" for suffix-less tickers
+ */
+function resolveExchange(
+  symbol: string,
+  exchCode: string | undefined,
+  exchDisp: string | undefined,
+): string {
+  const parts = symbol.split(".");
+  if (parts.length > 1) {
+    const suffix = parts[parts.length - 1].toUpperCase();
+    const map: Record<string, string> = {
+      HK: "HKEX",
+      L: "LSE",
+      T: "TSE",
+      TO: "TSX",
+      V: "TSX-V",
+      DE: "XETRA",
+      PA: "Euronext",
+      AS: "Euronext",
+      MI: "Borsa IT",
+      MC: "BME",
+      SW: "SIX",
+      ST: "Nasdaq Stockholm",
+      CO: "Nasdaq Copenhagen",
+      OL: "Oslo",
+      HE: "Nasdaq Helsinki",
+      AX: "ASX",
+      NZ: "NZX",
+      SI: "SGX",
+      KS: "KRX",
+      KQ: "KOSDAQ",
+      SS: "SSE",
+      SZ: "SZSE",
+      NS: "NSE",
+      BO: "BSE",
+      SA: "B3",
+      MX: "BMV",
+      JK: "IDX",
+      BK: "SET",
+      TW: "TWSE",
+      F: "Frankfurt",
+      MU: "München",
+      DU: "Düsseldorf",
+      BR: "Euronext",
+    };
+    if (map[suffix]) return map[suffix];
+  }
+  if (exchCode && EXCH_NORMALIZE[exchCode]) return EXCH_NORMALIZE[exchCode];
+  if (exchDisp) return exchDisp;
+  return "US";
 }
 
 async function searchCoinGecko(q: string): Promise<SearchResult[]> {
