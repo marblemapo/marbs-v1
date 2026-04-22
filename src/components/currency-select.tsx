@@ -164,8 +164,13 @@ export function CurrencySelect({
         <ul
           role="listbox"
           className={cn(
-            "absolute z-50 left-0 right-0 top-full mt-1.5",
-            "bg-surface border border-border rounded-lg shadow-lg overflow-hidden",
+            "absolute z-50 left-0 top-full mt-1.5",
+            // Fixed min-width so narrow containers (128px currency col in the
+            // onboarding wizard) don't clip "USD · US Dollar". Opaque surface
+            // ensures anything behind — like the balance input to the right —
+            // never bleeds through.
+            "min-w-[240px] w-max max-w-[320px]",
+            "bg-[#2C2C2E] border border-white/[0.12] rounded-lg shadow-2xl overflow-hidden",
             "max-h-[280px] overflow-y-auto",
           )}
         >

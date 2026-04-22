@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { SymbolAutocomplete } from "@/components/symbol-autocomplete";
 import { CurrencySelect } from "@/components/currency-select";
 import { ConnectWalletDialog } from "@/components/connect-wallet-dialog";
+import { PortfolioAssembly } from "@/components/portfolio-assembly";
 import { addAsset, type AddAssetInput } from "@/app/actions/assets";
 import { getCurrency } from "@/lib/currencies";
 import { cn } from "@/lib/utils";
@@ -167,6 +168,9 @@ export function OnboardingWizard({
     { label: string; message: string }[]
   >([]);
   const [walletOpen, setWalletOpen] = useState(false);
+  const [progress, setProgress] = useState<{ total: number; done: number } | null>(
+    null,
+  );
 
   // ---------- Row helpers ----------
   const patchStocks = (id: string, patch: Partial<StockRow>) =>
@@ -250,7 +254,19 @@ export function OnboardingWizard({
     startTransition(async () => {
       // Fire all in parallel. Finnhub free tier = 60 rpm which comfortably
       // covers ~10 rows. CoinGecko is generous for crypto.
-      const results = await Promise.all(inputs.map((i) => addAsset(i)));
+      //
+      // Each promise bumps `done` on settle — drives the live progress
+      // counter in the PortfolioAssembly overlay.
+      setProgress({ total: inputs.length, done: 0 });
+      const results = await Promise.all(
+        inputs.map((i) =>
+          addAsset(i).finally(() =>
+            setProgress((p) =>
+              p ? { total: p.total, done: p.done + 1 } : p,
+            ),
+          ),
+        ),
+      );
       const failed = results
         .map((r, i) => ({ r, i }))
         .filter(({ r }) => !r.ok)
@@ -260,12 +276,16 @@ export function OnboardingWizard({
         }));
 
       if (failed.length === 0) {
+        // Give the assembly animation a beat to land on the "complete" state
+        // before the route change kills it — feels less abrupt.
+        await new Promise((r) => setTimeout(r, 600));
         router.push("/dashboard");
         router.refresh();
         return;
       }
 
       setErrors(failed);
+      setProgress(null);
       // Don't navigate — leave the user on the wizard to fix the failures.
     });
   }
@@ -469,6 +489,10 @@ export function OnboardingWizard({
       </div>
 
       <ConnectWalletDialog open={walletOpen} onOpenChange={setWalletOpen} />
+
+      {progress && (
+        <PortfolioAssembly total={progress.total} done={progress.done} />
+      )}
     </main>
   );
 }
