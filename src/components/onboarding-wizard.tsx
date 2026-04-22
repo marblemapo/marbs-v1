@@ -123,6 +123,7 @@ function CashRowUI({
         <CurrencySelect
           defaultValue={row.currency}
           placeholder="USD"
+          hideLabel
           onValueChange={(v) =>
             onPatch(row.id, { currency: v.trim().toUpperCase() })
           }

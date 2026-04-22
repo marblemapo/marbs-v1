@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { etfLogoUrl } from "@/lib/etf-logos";
+import { fetchFinnhubProfile } from "@/lib/prices";
 
 /**
  * Unified search endpoint for the add-asset autocomplete.
@@ -98,30 +99,50 @@ async function searchFinnhub(q: string): Promise<SearchResult[]> {
     F: "Frankfurt", MU: "München", DU: "Düsseldorf", BR: "Euronext",
   };
 
-  return raw
+  // Top candidates only — we hit profile2 per result to resolve a logo,
+  // and Finnhub's free tier is 60 rpm. Capping at 8 keeps bursts safe;
+  // each profile2 response caches for 24h via Next's fetch cache, so
+  // repeat searches are free.
+  const filtered = raw
     .filter((r) => r.symbol && (!r.type || allowedTypes.has(r.type)))
-    .map((r) => {
-      const sym = (r.displaySymbol ?? r.symbol)!;
-      const parts = sym.split(".");
-      const suffix = parts.length > 1 ? parts[parts.length - 1].toUpperCase() : "";
-      const exchange = suffix ? EX_NAME[suffix] ?? suffix : "US";
-      const isEtf = r.type === "ETP" || r.type === "ETF";
-      // Best-effort thumb for the autocomplete row: if this ticker is in
-      // our curated ETF issuer map, use the issuer's favicon. Otherwise we
-      // leave thumb null — Finnhub doesn't return company domains on /search,
-      // so we'd need a separate profile2 call per result to synthesize a
-      // logo for arbitrary stocks, which is too expensive for typeahead.
-      // The real logo resolves once the user adds the asset.
-      return {
-        symbol: sym,
-        name: r.description ?? sym,
-        externalId: r.symbol!, // Finnhub wants the RAW symbol for /quote
-        source: "finnhub" as const,
-        exchange,
-        thumb: etfLogoUrl(r.symbol!) ?? etfLogoUrl(sym) ?? null,
-        assetClass: (isEtf ? "etf" : "equity") as "equity" | "etf",
-      };
-    });
+    .slice(0, 8);
+
+  // Kick off profile fetches in parallel. These give us real logos (Tesla
+  // red, NVIDIA green, Circle's cyan-purple). The fetchFinnhubProfile
+  // helper already does the "no logo → Google-favicon-via-weburl" fallback,
+  // so long-tail tickers without a Finnhub logo still get something.
+  const profiles = await Promise.all(
+    filtered.map((r) =>
+      fetchFinnhubProfile(r.symbol!).catch(() => null),
+    ),
+  );
+
+  return filtered.map((r, i) => {
+    const sym = (r.displaySymbol ?? r.symbol)!;
+    const parts = sym.split(".");
+    const suffix = parts.length > 1 ? parts[parts.length - 1].toUpperCase() : "";
+    const exchange = suffix ? EX_NAME[suffix] ?? suffix : "US";
+    const isEtf = r.type === "ETP" || r.type === "ETF";
+
+    // Thumb priority: Finnhub profile's logo (or its own favicon fallback)
+    // → ETF issuer map → null. Curated map acts as a safety net for ETFs
+    // whose profile2 response is empty.
+    const thumb =
+      profiles[i]?.logo ??
+      etfLogoUrl(r.symbol!) ??
+      etfLogoUrl(sym) ??
+      null;
+
+    return {
+      symbol: sym,
+      name: r.description ?? sym,
+      externalId: r.symbol!, // Finnhub wants the RAW symbol for /quote
+      source: "finnhub" as const,
+      exchange,
+      thumb,
+      assetClass: (isEtf ? "etf" : "equity") as "equity" | "etf",
+    };
+  });
 }
 
 async function searchCoinGecko(q: string): Promise<SearchResult[]> {
