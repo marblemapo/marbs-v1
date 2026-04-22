@@ -57,8 +57,10 @@ export function inferCurrencyFromTicker(ticker: string): string {
  *
  * Logo fallback: Finnhub's free tier often has no logo for recently-IPO'd
  * tickers (e.g. CRCL). When the `logo` field is empty but `weburl` is set,
- * we synthesize a Clearbit logo URL from the domain — auth-less, cached by
- * Clearbit's CDN, covers essentially every public company.
+ * we synthesize a favicon URL via Google's s2 service at 128px. Clearbit
+ * (the obvious choice) retired their logo API in Dec 2024; Google s2 is
+ * stable, free, no-auth, and covers essentially every public company with
+ * a web presence.
  *
  * Returns null if Finnhub doesn't have a profile for this symbol at all
  * (common for non-US tickers outside the premium plan).
@@ -83,7 +85,9 @@ export async function fetchFinnhubProfile(symbol: string): Promise<{
     let logo: string | null = data.logo || null;
     if (!logo && typeof data.weburl === "string" && data.weburl) {
       const domain = extractDomain(data.weburl);
-      if (domain) logo = `https://logo.clearbit.com/${domain}`;
+      if (domain) {
+        logo = `https://www.google.com/s2/favicons?domain=${domain}&sz=128`;
+      }
     }
 
     return {

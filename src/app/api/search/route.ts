@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { etfLogoUrl } from "@/lib/etf-logos";
 
 /**
  * Unified search endpoint for the add-asset autocomplete.
@@ -105,13 +106,19 @@ async function searchFinnhub(q: string): Promise<SearchResult[]> {
       const suffix = parts.length > 1 ? parts[parts.length - 1].toUpperCase() : "";
       const exchange = suffix ? EX_NAME[suffix] ?? suffix : "US";
       const isEtf = r.type === "ETP" || r.type === "ETF";
+      // Best-effort thumb for the autocomplete row: if this ticker is in
+      // our curated ETF issuer map, use the issuer's favicon. Otherwise we
+      // leave thumb null — Finnhub doesn't return company domains on /search,
+      // so we'd need a separate profile2 call per result to synthesize a
+      // logo for arbitrary stocks, which is too expensive for typeahead.
+      // The real logo resolves once the user adds the asset.
       return {
         symbol: sym,
         name: r.description ?? sym,
         externalId: r.symbol!, // Finnhub wants the RAW symbol for /quote
         source: "finnhub" as const,
         exchange,
-        thumb: null,
+        thumb: etfLogoUrl(r.symbol!) ?? etfLogoUrl(sym) ?? null,
         assetClass: (isEtf ? "etf" : "equity") as "equity" | "etf",
       };
     });

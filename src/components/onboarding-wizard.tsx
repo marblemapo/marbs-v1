@@ -60,7 +60,7 @@ function StockLikeRow({
   canRemove: boolean;
 }) {
   return (
-    <div className="flex items-start gap-2">
+    <div className="flex items-start gap-2 min-w-0">
       <div className="flex-1 min-w-0">
         <SymbolAutocomplete
           assetClass={uiClass}
@@ -82,7 +82,7 @@ function StockLikeRow({
         value={row.quantity}
         onChange={(e) => onPatch(row.id, { quantity: e.target.value })}
         inputMode="decimal"
-        className="h-11 w-28 tabular-nums"
+        className="h-11 w-20 sm:w-28 shrink-0 tabular-nums"
       />
       <button
         type="button"
@@ -108,8 +108,17 @@ function CashRowUI({
   onRemove: (id: string) => void;
   canRemove: boolean;
 }) {
+  // Row constraints:
+  //   - Currency picker has a fixed 128px footprint so the flag + code +
+  //     chevron never collide.
+  //   - Balance input takes the rest. `min-w-0` is critical: a naked
+  //     flex-1 input reports its natural content width, which pushes the
+  //     row wider than its parent on narrow viewports → you see the card
+  //     clip a pill-shaped icon at the edge. min-w-0 lets flex shrink it.
+  //   - Wrap the whole row in `min-w-0` too so the parent section can
+  //     compute gutters correctly.
   return (
-    <div className="flex items-start gap-2">
+    <div className="flex items-start gap-2 min-w-0">
       <div className="w-32 shrink-0">
         <CurrencySelect
           defaultValue={row.currency}
@@ -127,7 +136,7 @@ function CashRowUI({
         value={row.balance}
         onChange={(e) => onPatch(row.id, { balance: e.target.value })}
         inputMode="decimal"
-        className="h-11 flex-1 tabular-nums"
+        className="h-11 flex-1 min-w-0 tabular-nums"
       />
       <button
         type="button"
