@@ -1,4 +1,4 @@
-# Wealth.
+# marbs
 
 **Privacy-first multi-asset net-worth tracker.** Manual entry, live prices, no bank logins.
 
