@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Input } from "@/components/ui/input";
 import { SymbolAutocomplete } from "@/components/symbol-autocomplete";
 import { CurrencySelect } from "@/components/currency-select";
+import { ConnectWalletDialog } from "@/components/connect-wallet-dialog";
 import { addAsset, type AddAssetInput } from "@/app/actions/assets";
 import { getCurrency } from "@/lib/currencies";
 import { cn } from "@/lib/utils";
@@ -165,6 +166,7 @@ export function OnboardingWizard({
   const [errors, setErrors] = useState<
     { label: string; message: string }[]
   >([]);
+  const [walletOpen, setWalletOpen] = useState(false);
 
   // ---------- Row helpers ----------
   const patchStocks = (id: string, patch: Partial<StockRow>) =>
@@ -286,6 +288,41 @@ export function OnboardingWizard({
             always add more later.
           </p>
         </header>
+
+        {/* Wallet — optional shortcut for crypto */}
+        <button
+          type="button"
+          onClick={() => setWalletOpen(true)}
+          className="flex flex-col gap-2 p-5 rounded-lg bg-surface border border-gold/20 hover:border-gold/40 transition-colors text-left"
+        >
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="font-display text-lg font-bold text-gold">
+              Got on-chain crypto?
+            </h2>
+            <span className="text-gold text-lg shrink-0">→</span>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {[
+              "Ethereum",
+              "Base",
+              "Arbitrum",
+              "Optimism",
+              "Polygon",
+              "BNB Chain",
+            ].map((c) => (
+              <span
+                key={c}
+                className="inline-flex items-center h-6 px-2 rounded-pill bg-gold-dim text-gold text-[11px] font-semibold"
+              >
+                {c}
+              </span>
+            ))}
+          </div>
+          <div className="text-sm text-text-secondary leading-relaxed">
+            Paste an EVM address or ENS — we&apos;ll auto-import your tokens
+            across all six chains. Read-only, no signing, disconnect any time.
+          </div>
+        </button>
 
         {/* Stocks & ETFs */}
         <section className="flex flex-col gap-3 p-5 rounded-lg bg-surface border border-border">
@@ -430,6 +467,8 @@ export function OnboardingWizard({
           </button>
         </div>
       </div>
+
+      <ConnectWalletDialog open={walletOpen} onOpenChange={setWalletOpen} />
     </main>
   );
 }

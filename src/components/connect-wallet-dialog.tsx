@@ -155,10 +155,31 @@ export function ConnectWalletDialog({
             Connect a wallet
           </SheetTitle>
           <p className="text-sm text-text-secondary mt-2 leading-relaxed">
-            Read-only sync of an EVM address across Ethereum, Base, Arbitrum,
-            Optimism, Polygon, and BNB Chain. We never take custody, never sign
+            Read-only sync of an EVM address. We never take custody, never sign
             transactions, and only read public balances. Disconnect any time.
           </p>
+          <div className="flex flex-col gap-1.5 mt-3">
+            <span className="font-plex text-[10px] text-text-muted uppercase tracking-wider">
+              Chains we&apos;ll scan
+            </span>
+            <div className="flex flex-wrap gap-1.5">
+              {[
+                "Ethereum",
+                "Base",
+                "Arbitrum",
+                "Optimism",
+                "Polygon",
+                "BNB Chain",
+              ].map((c) => (
+                <span
+                  key={c}
+                  className="inline-flex items-center gap-1 h-6 px-2 rounded-pill bg-gold-dim text-gold text-[11px] font-semibold"
+                >
+                  {c}
+                </span>
+              ))}
+            </div>
+          </div>
         </SheetHeader>
 
         <div className="flex flex-col flex-1 gap-5 px-6 pb-6 overflow-y-auto">

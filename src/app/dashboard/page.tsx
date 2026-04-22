@@ -10,6 +10,7 @@ import {
   type ConnectedWalletRow,
 } from "@/components/connected-wallets-section";
 import { NetWorthHero } from "@/components/networth-hero";
+import { EmptyHoldingsCard } from "@/components/empty-holdings-card";
 import { DangerZone } from "@/components/danger-zone";
 import { CurrencyProvider } from "@/components/currency-context";
 import { fetchFxRates, convertFx } from "@/lib/fx";
@@ -295,25 +296,7 @@ export default async function DashboardPage() {
             </div>
 
             {rowsWithValue.length === 0 ? (
-              <div className="f3-card p-8 flex flex-col items-center gap-4 text-center">
-                <div className="flex flex-col gap-1">
-                  <div className="font-sans text-lg font-bold">
-                    No holdings yet
-                  </div>
-                  <div className="text-sm text-text-secondary max-w-[380px]">
-                    Add everything in one pass — stocks, crypto, cash — and see
-                    your net worth in about three minutes.
-                  </div>
-                </div>
-                <a href="/onboarding" className="f3-cta">
-                  Log my holdings →
-                </a>
-                <div className="font-plex text-xs text-text-muted">
-                  Prefer one at a time? Use the{" "}
-                  <span className="text-[#7FFFD4] font-medium">+ Add asset</span>{" "}
-                  button above.
-                </div>
-              </div>
+              <EmptyHoldingsCard />
             ) : (
               <AssetsList rows={rowsWithValue} />
             )}
