@@ -10,20 +10,31 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { cn } from "@/lib/utils";
-import { connectWallet, createSiweChallenge } from "@/app/actions/wallets";
+import { connectWallet } from "@/app/actions/wallets";
 
-type Mode = "address" | "signature";
-
-type EthereumProvider = {
-  request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
+type Row = {
+  id: string;
+  address: string;
+  label: string;
+  error: string | null;
 };
 
-declare global {
-  interface Window {
-    ethereum?: EthereumProvider;
-  }
+function uid() {
+  return Math.random().toString(36).slice(2, 10);
 }
+
+function blank(): Row {
+  return { id: uid(), address: "", label: "", error: null };
+}
+
+const CHAINS = [
+  "Ethereum",
+  "Base",
+  "Arbitrum",
+  "Optimism",
+  "Polygon",
+  "BNB Chain",
+];
 
 export function ConnectWalletDialog({
   open,
@@ -32,109 +43,73 @@ export function ConnectWalletDialog({
   open: boolean;
   onOpenChange: (v: boolean) => void;
 }) {
-  const [mode, setMode] = useState<Mode>("address");
-  const [input, setInput] = useState("");
-  const [label, setLabel] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [status, setStatus] = useState<string | null>(null);
+  const [rows, setRows] = useState<Row[]>([blank()]);
+  const [globalError, setGlobalError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
   function reset() {
-    setMode("address");
-    setInput("");
-    setLabel("");
-    setError(null);
-    setStatus(null);
+    setRows([blank()]);
+    setGlobalError(null);
   }
 
-  async function handleAddressSubmit(e: FormEvent<HTMLFormElement>) {
+  function patch(id: string, p: Partial<Row>) {
+    setRows((rs) => rs.map((r) => (r.id === id ? { ...r, ...p } : r)));
+  }
+
+  function addRow() {
+    setRows((rs) => [...rs, blank()]);
+  }
+
+  function removeRow(id: string) {
+    setRows((rs) => (rs.length > 1 ? rs.filter((r) => r.id !== id) : rs));
+  }
+
+  function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    setError(null);
-    if (!input.trim()) {
-      setError("Paste an Ethereum address or ENS name.");
+    setGlobalError(null);
+
+    // Only rows with non-empty address are submitted. Empty rows are ignored
+    // so users can have a trailing blank without it being an error.
+    const active = rows.filter((r) => r.address.trim().length > 0);
+    if (active.length === 0) {
+      setGlobalError("Paste at least one address or ENS name.");
       return;
     }
-    startTransition(async () => {
-      const res = await connectWallet({
-        input: input.trim(),
-        label: label.trim() || null,
-        method: "address",
-      });
-      if (!res.ok) {
-        setError(res.error);
-        return;
-      }
-      onOpenChange(false);
-      reset();
-    });
-  }
 
-  async function handleSignatureConnect() {
-    setError(null);
-    setStatus(null);
-    if (typeof window === "undefined" || !window.ethereum) {
-      setError(
-        "No browser wallet detected. Install MetaMask or use the paste-address option.",
+    // Clear any row-level errors before retrying.
+    setRows((rs) => rs.map((r) => ({ ...r, error: null })));
+
+    startTransition(async () => {
+      // Fire all connects in parallel — the server action upserts so a
+      // duplicate address is a no-op rather than an error.
+      const results = await Promise.all(
+        active.map((r) =>
+          connectWallet({
+            input: r.address.trim(),
+            label: r.label.trim() || null,
+            method: "address",
+          }).then((res) => ({ id: r.id, res })),
+        ),
       );
-      return;
-    }
 
-    startTransition(async () => {
-      try {
-        setStatus("Opening wallet…");
-        const accounts = (await window.ethereum!.request({
-          method: "eth_requestAccounts",
-        })) as string[];
-        const address = accounts?.[0];
-        if (!address) {
-          setError("Wallet didn't return an address.");
-          setStatus(null);
-          return;
-        }
-
-        setStatus("Preparing signature request…");
-        const challenge = await createSiweChallenge({
-          address,
-          domain: window.location.host,
-          uri: window.location.origin,
-        });
-        if ("error" in challenge) {
-          setError(challenge.error);
-          setStatus(null);
-          return;
-        }
-
-        setStatus("Waiting for you to sign in your wallet…");
-        const signature = (await window.ethereum!.request({
-          method: "personal_sign",
-          params: [challenge.message, address],
-        })) as `0x${string}`;
-
-        setStatus("Syncing balances…");
-        const res = await connectWallet({
-          input: address,
-          label: label.trim() || null,
-          method: "signature",
-          message: challenge.message,
-          signature,
-        });
+      const failed: string[] = [];
+      for (const { id, res } of results) {
         if (!res.ok) {
-          setError(res.error);
-          setStatus(null);
-          return;
+          failed.push(id);
+          patch(id, { error: res.error });
         }
+      }
+
+      if (failed.length === 0) {
         onOpenChange(false);
         reset();
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : "Connection failed";
-        // Swallow user-rejection errors into a friendly copy.
-        if (/rejected|denied/i.test(msg)) {
-          setError("You cancelled the signature request.");
-        } else {
-          setError(msg);
-        }
-        setStatus(null);
+        return;
       }
+
+      // Keep the dialog open with only the failed rows. Succeeded rows are
+      // already saved — drop them from the form so the user isn't confused
+      // about what's still pending.
+      setRows((rs) => rs.filter((r) => failed.includes(r.id) || !active.find((a) => a.id === r.id)));
     });
   }
 
@@ -152,10 +127,10 @@ export function ConnectWalletDialog({
       >
         <SheetHeader className="p-6 pb-4">
           <SheetTitle className="font-display text-2xl font-bold tracking-tight">
-            Connect a wallet
+            Connect wallets
           </SheetTitle>
           <p className="text-sm text-text-secondary mt-2 leading-relaxed">
-            Read-only sync of an EVM address. We never take custody, never sign
+            Read-only sync of EVM addresses. We never take custody, never sign
             transactions, and only read public balances. Disconnect any time.
           </p>
           <div className="flex flex-col gap-1.5 mt-3">
@@ -163,14 +138,7 @@ export function ConnectWalletDialog({
               Chains we&apos;ll scan
             </span>
             <div className="flex flex-wrap gap-1.5">
-              {[
-                "Ethereum",
-                "Base",
-                "Arbitrum",
-                "Optimism",
-                "Polygon",
-                "BNB Chain",
-              ].map((c) => (
+              {CHAINS.map((c) => (
                 <span
                   key={c}
                   className="inline-flex items-center gap-1 h-6 px-2 rounded-pill bg-gold-dim text-gold text-[11px] font-semibold"
@@ -182,158 +150,103 @@ export function ConnectWalletDialog({
           </div>
         </SheetHeader>
 
-        <div className="flex flex-col flex-1 gap-5 px-6 pb-6 overflow-y-auto">
-          {/* Mode picker */}
-          <div className="flex flex-col gap-2">
-            <Label className="text-[11px] text-text-muted uppercase tracking-wider font-medium">
-              Method
-            </Label>
-            <div className="grid grid-cols-2 gap-1.5">
-              {([
-                { id: "address", label: "Paste address" },
-                { id: "signature", label: "Connect wallet" },
-              ] as const).map((m) => (
-                <button
-                  key={m.id}
-                  type="button"
-                  onClick={() => {
-                    setMode(m.id);
-                    setError(null);
-                    setStatus(null);
-                  }}
-                  className={cn(
-                    "h-10 rounded-lg text-sm font-semibold transition-colors border",
-                    mode === m.id
-                      ? "bg-gold text-primary-foreground border-gold"
-                      : "bg-surface text-text-secondary border-border hover:bg-surface-hover",
+        <form
+          onSubmit={handleSubmit}
+          className="flex flex-col flex-1 gap-4 px-6 pb-6 overflow-y-auto"
+        >
+          <div className="flex flex-col gap-4">
+            {rows.map((r, idx) => (
+              <div
+                key={r.id}
+                className="flex flex-col gap-1.5 p-3 rounded-lg bg-surface/50 border border-border"
+              >
+                <div className="flex items-center justify-between">
+                  <Label
+                    htmlFor={`addr-${r.id}`}
+                    className="text-[11px] text-text-muted uppercase tracking-wider font-medium"
+                  >
+                    Wallet {rows.length > 1 ? idx + 1 : ""}
+                  </Label>
+                  {rows.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => removeRow(r.id)}
+                      aria-label="Remove wallet"
+                      className="h-6 w-6 flex items-center justify-center rounded-md text-text-muted hover:text-loss hover:bg-surface-hover transition-colors"
+                    >
+                      ×
+                    </button>
                   )}
-                >
-                  {m.label}
-                </button>
-              ))}
-            </div>
-            <p className="text-xs text-text-muted">
-              {mode === "address"
-                ? "Watch-only: paste any public address or ENS. No signing."
-                : "Sign a message to prove you own the connected wallet. No transactions."}
-            </p>
-          </div>
-
-          {/* Label */}
-          <div className="flex flex-col gap-1.5">
-            <Label
-              htmlFor="walletLabel"
-              className="text-[11px] text-text-muted uppercase tracking-wider font-medium"
-            >
-              Label
-              <span className="text-text-muted/60 normal-case tracking-normal font-normal ml-1.5">
-                · optional
-              </span>
-            </Label>
-            <Input
-              id="walletLabel"
-              name="walletLabel"
-              value={label}
-              onChange={(e) => setLabel(e.target.value)}
-              placeholder="Hot wallet · Hardware · Vitalik"
-              autoComplete="off"
-              className="h-11"
-            />
-          </div>
-
-          {mode === "address" ? (
-            <form onSubmit={handleAddressSubmit} className="flex flex-col gap-5">
-              <div className="flex flex-col gap-1.5">
-                <Label
-                  htmlFor="walletInput"
-                  className="text-[11px] text-text-muted uppercase tracking-wider font-medium"
-                >
-                  Address or ENS
-                </Label>
+                </div>
                 <Input
-                  id="walletInput"
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
+                  id={`addr-${r.id}`}
+                  value={r.address}
+                  onChange={(e) => patch(r.id, { address: e.target.value })}
                   placeholder="0x… or vitalik.eth"
                   autoComplete="off"
                   spellCheck={false}
-                  autoFocus
+                  autoFocus={idx === 0}
                   className="h-11 font-mono text-sm"
                 />
-                <p className="text-xs text-text-muted">
-                  This address is public on Ethereum — anyone can see its
-                  balances.
-                </p>
+                <Input
+                  value={r.label}
+                  onChange={(e) => patch(r.id, { label: e.target.value })}
+                  placeholder="Label (optional) — Hot wallet · Hardware"
+                  autoComplete="off"
+                  className="h-9 text-sm"
+                />
+                {r.error && (
+                  <div className="text-xs text-loss leading-relaxed">
+                    {r.error}
+                  </div>
+                )}
               </div>
+            ))}
+          </div>
 
-              {error && (
-                <div className="text-sm text-loss leading-relaxed p-3 rounded-lg bg-loss/10 border border-loss/20">
-                  {error}
-                </div>
-              )}
+          <button
+            type="button"
+            onClick={addRow}
+            className="self-start text-xs text-gold hover:text-gold/80 font-semibold transition-colors"
+          >
+            + Add another wallet
+          </button>
 
-              <div className="flex items-center gap-2 mt-auto pt-4">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  className="h-11 flex-1 font-semibold"
-                  onClick={() => onOpenChange(false)}
-                  disabled={pending}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="submit"
-                  className="h-11 flex-1 font-semibold"
-                  disabled={pending}
-                >
-                  {pending ? "Syncing…" : "Connect"}
-                </Button>
-              </div>
-            </form>
-          ) : (
-            <div className="flex flex-col gap-5">
-              <div className="text-sm text-text-secondary leading-relaxed">
-                We&apos;ll ask your browser wallet (MetaMask, Rabby, Coinbase
-                Wallet, Binance Web3 Wallet) to sign a plain-text message proving
-                you own the address. The message grants no spend or approval
-                rights.
-              </div>
-
-              {status && (
-                <div className="text-sm text-text-secondary p-3 rounded-lg bg-surface border border-border">
-                  {status}
-                </div>
-              )}
-
-              {error && (
-                <div className="text-sm text-loss leading-relaxed p-3 rounded-lg bg-loss/10 border border-loss/20">
-                  {error}
-                </div>
-              )}
-
-              <div className="flex items-center gap-2 mt-auto pt-4">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  className="h-11 flex-1 font-semibold"
-                  onClick={() => onOpenChange(false)}
-                  disabled={pending}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="button"
-                  className="h-11 flex-1 font-semibold"
-                  onClick={handleSignatureConnect}
-                  disabled={pending}
-                >
-                  {pending ? "Connecting…" : "Connect wallet"}
-                </Button>
-              </div>
+          {globalError && (
+            <div className="text-sm text-loss leading-relaxed p-3 rounded-lg bg-loss/10 border border-loss/20">
+              {globalError}
             </div>
           )}
-        </div>
+
+          <p className="text-xs text-text-muted leading-relaxed mt-auto">
+            Find addresses in your wallet app under <em>Receive</em> or
+            <em> Account details</em>. Addresses are public on-chain — anyone
+            can see balances.
+          </p>
+
+          <div className="flex items-center gap-2 pt-2">
+            <Button
+              type="button"
+              variant="ghost"
+              className="h-11 flex-1 font-semibold"
+              onClick={() => onOpenChange(false)}
+              disabled={pending}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              className="h-11 flex-1 font-semibold"
+              disabled={pending}
+            >
+              {pending
+                ? "Syncing…"
+                : rows.filter((r) => r.address.trim()).length > 1
+                  ? `Connect ${rows.filter((r) => r.address.trim()).length} wallets`
+                  : "Connect"}
+            </Button>
+          </div>
+        </form>
       </SheetContent>
     </Sheet>
   );
