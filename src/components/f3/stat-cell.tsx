@@ -77,14 +77,14 @@ export function StatCell({
       onMouseLeave={() => setHovering(false)}
       onFocus={() => setHovering(true)}
       onBlur={() => setHovering(false)}
-      className="group relative bg-[#0A0A0A] p-5 flex flex-col gap-1.5 transition-colors duration-200 hover:bg-[rgba(127,255,212,0.04)] focus:outline-none focus-visible:bg-[rgba(127,255,212,0.04)]"
+      className="group relative bg-[#0A0A0A] p-5 flex flex-col gap-1.5 min-w-0 overflow-hidden transition-colors duration-200 hover:bg-[rgba(127,255,212,0.04)] focus:outline-none focus-visible:bg-[rgba(127,255,212,0.04)]"
     >
       <div className="font-plex text-[11px] text-text-muted uppercase tracking-[0.12em] font-medium">
         {label}
       </div>
       <div className="relative h-9">
         <div
-          className={`font-plex text-2xl font-semibold tabular-nums transition-opacity duration-150 ${
+          className={`font-plex text-xl sm:text-2xl font-semibold tabular-nums transition-opacity duration-150 ${
             positive ? "text-gain" : ""
           } ${active ? "opacity-0" : "opacity-100"}`}
         >
@@ -97,7 +97,7 @@ export function StatCell({
           aria-hidden={!active}
         >
           <div
-            className={`font-plex text-2xl font-semibold tabular-nums leading-none ${
+            className={`font-plex text-xl sm:text-2xl font-semibold tabular-nums leading-none ${
               positive ? "text-gain" : "text-white"
             }`}
           >
