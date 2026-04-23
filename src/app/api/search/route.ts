@@ -53,6 +53,21 @@ export async function GET(request: NextRequest) {
   }
 }
 
+/**
+ * Primary: Yahoo (global coverage, no key).
+ * Fallback: Finnhub (US-biased but auth-keyed and always reachable).
+ *
+ * Yahoo's finance endpoints occasionally block server-side requests from
+ * specific IP ranges (Vercel's serverless, Cloudflare Workers, etc). When
+ * that happens an empty array would hide every ticker — so if Yahoo returns
+ * nothing, we retry against Finnhub before giving up.
+ */
+async function searchStocks(q: string): Promise<SearchResult[]> {
+  const yahoo = await searchYahoo(q).catch(() => [] as SearchResult[]);
+  if (yahoo.length > 0) return yahoo;
+  return searchFinnhub(q).catch(() => [] as SearchResult[]);
+}
+
 const YAHOO_UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 " +
   "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
@@ -89,7 +104,7 @@ const EXCH_NORMALIZE: Record<string, string> = {
   VAN: "TSX-V",
 };
 
-async function searchStocks(q: string): Promise<SearchResult[]> {
+async function searchYahoo(q: string): Promise<SearchResult[]> {
   // quotesCount=20 gives Yahoo room to surface non-US listings before
   // trimming to our top-8. `region=US` keeps ranking stable across users.
   const url =
@@ -210,6 +225,59 @@ function resolveExchange(
   if (exchCode && EXCH_NORMALIZE[exchCode]) return EXCH_NORMALIZE[exchCode];
   if (exchDisp) return exchDisp;
   return "US";
+}
+
+/**
+ * Finnhub fallback. Used only when Yahoo returns nothing (usually means
+ * Yahoo IP-blocked the request). US-biased but reliable — has an auth key,
+ * unaffected by the unofficial-API flakiness that hits Yahoo.
+ */
+async function searchFinnhub(q: string): Promise<SearchResult[]> {
+  const key = process.env.FINNHUB_API_KEY;
+  if (!key) return [];
+  const url = `https://finnhub.io/api/v1/search?q=${encodeURIComponent(q)}&token=${key}`;
+  const res = await fetch(url, { next: { revalidate: 300 } });
+  if (!res.ok) return [];
+
+  type FH = {
+    symbol?: string;
+    displaySymbol?: string;
+    description?: string;
+    type?: string;
+  };
+  const data = await res.json();
+  const raw: FH[] = data?.result ?? [];
+
+  const allowedTypes = new Set(["Common Stock", "ETP", "ETF", "ADR"]);
+  const filtered = raw
+    .filter((r) => r.symbol && (!r.type || allowedTypes.has(r.type)))
+    .slice(0, 8);
+
+  const profiles = await Promise.all(
+    filtered.map((r) =>
+      fetchFinnhubProfile(r.symbol!).catch(() => null),
+    ),
+  );
+
+  return filtered.map((r, i) => {
+    const sym = (r.displaySymbol ?? r.symbol)!;
+    const exchange = resolveExchange(sym, undefined, undefined);
+    const isEtf = r.type === "ETP" || r.type === "ETF";
+    const thumb =
+      profiles[i]?.logo ??
+      etfLogoUrl(r.symbol!) ??
+      etfLogoUrl(sym) ??
+      null;
+    return {
+      symbol: sym,
+      name: r.description ?? sym,
+      externalId: r.symbol!,
+      source: "finnhub" as const,
+      exchange,
+      thumb,
+      assetClass: (isEtf ? "etf" : "equity") as "equity" | "etf",
+    };
+  });
 }
 
 async function searchCoinGecko(q: string): Promise<SearchResult[]> {

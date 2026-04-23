@@ -63,8 +63,11 @@ export async function WealthLanding() {
           </span>
         </div>
 
-        {/* Interactive empty-state stats strip */}
-        <div className="grid grid-cols-3 gap-px bg-white/[0.08] rounded-[14px] overflow-hidden">
+        {/* Interactive empty-state stats strip. Stacks to one column on
+            narrow viewports so the wide currency-formatted numbers don't
+            clip — the 3-up is only viable at sm+ where each cell has
+            room to breathe. */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-px bg-white/[0.08] rounded-[14px] overflow-hidden">
           <StatCell
             label="Net worth"
             target={2184729.84}
