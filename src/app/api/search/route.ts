@@ -1,6 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { etfLogoUrl } from "@/lib/etf-logos";
-import { fetchFinnhubProfile } from "@/lib/prices";
 
 /**
  * Unified search endpoint for the add-asset autocomplete.
@@ -161,24 +160,21 @@ async function searchYahoo(q: string): Promise<SearchResult[]> {
   }
   const filtered = [...usBucket, ...intlBucket].slice(0, 8);
 
-  // Fan out logo lookups. Finnhub's profile2 cache lives 24h, so repeat
-  // searches for common tickers are free. Bounded at 8 per search.
-  const profiles = await Promise.all(
-    filtered.map((q2) =>
-      fetchFinnhubProfile(q2.symbol!).catch(() => null),
-    ),
-  );
+  // No server-side logo fetches in the search path. Finnhub profile2 calls
+  // added ~500ms of cold latency per search — dominant cost vs the Yahoo
+  // fetch itself. The client (SymbolAutocomplete → ResultAvatar) already
+  // tries `static2.finnhub.io/.../{SYMBOL}.png` as a direct-URL fallback
+  // and drops to a 2-letter initials badge on 404, so skipping the server
+  // profile2 loop costs us nothing visually but saves a full roundtrip per
+  // keystroke. ETF issuer map stays as an inline lookup since it's free.
 
-  return filtered.map((q2, i) => {
+  return filtered.map((q2) => {
     const sym = q2.symbol!;
     const exchange = resolveExchange(sym, q2.exchange, q2.exchDisp);
     const isEtf = q2.quoteType?.toUpperCase() === "ETF";
 
     const thumb =
-      profiles[i]?.logo ??
-      etfLogoUrl(sym) ??
-      etfLogoUrl(sym.split(".")[0]) ??
-      null;
+      etfLogoUrl(sym) ?? etfLogoUrl(sym.split(".")[0]) ?? null;
 
     return {
       symbol: sym,
@@ -278,21 +274,13 @@ async function searchFinnhub(q: string): Promise<SearchResult[]> {
     .filter((r) => r.symbol && (!r.type || allowedTypes.has(r.type)))
     .slice(0, 8);
 
-  const profiles = await Promise.all(
-    filtered.map((r) =>
-      fetchFinnhubProfile(r.symbol!).catch(() => null),
-    ),
-  );
-
-  return filtered.map((r, i) => {
+  return filtered.map((r) => {
     const sym = (r.displaySymbol ?? r.symbol)!;
     const exchange = resolveExchange(sym, undefined, undefined);
     const isEtf = r.type === "ETP" || r.type === "ETF";
-    const thumb =
-      profiles[i]?.logo ??
-      etfLogoUrl(r.symbol!) ??
-      etfLogoUrl(sym) ??
-      null;
+    // No profile2 calls — client falls back to the Finnhub CDN logo URL
+    // or initials. Keeps the search endpoint under ~200ms total.
+    const thumb = etfLogoUrl(r.symbol!) ?? etfLogoUrl(sym) ?? null;
     return {
       symbol: sym,
       name: r.description ?? sym,

@@ -101,6 +101,8 @@ export function SymbolAutocomplete({ assetClass, onChange, placeholder }: Props)
     }
 
     debounceRef.current = setTimeout(async () => {
+      // 250ms debounce — prevents a fetch per keystroke. Typing "tesla" now
+      // fires one request instead of five.
       setLoading(true);
       abortRef.current = new AbortController();
       try {
@@ -118,7 +120,7 @@ export function SymbolAutocomplete({ assetClass, onChange, placeholder }: Props)
       } finally {
         setLoading(false);
       }
-    }, 150);
+    }, 250);
 
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
