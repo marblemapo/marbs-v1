@@ -101,7 +101,10 @@ async function fetchAndCacheFromCoinGecko(
   };
 
   try {
-    const res = await fetch(url, { next: { revalidate: 3600 } });
+    const res = await fetch(url, {
+      next: { revalidate: 3600 },
+      signal: AbortSignal.timeout(6000),
+    });
     if (res.ok) {
       const data = await res.json();
       const slug: string | null = typeof data?.id === "string" ? data.id : null;
