@@ -131,13 +131,34 @@ async function searchYahoo(q: string): Promise<SearchResult[]> {
   const quotes: YQ[] = data?.quotes ?? [];
 
   // Keep only tradeable equities + ETFs. Drop currencies, indices, options.
-  const filtered = quotes
-    .filter((q2) => {
-      if (!q2.symbol) return false;
-      const t = q2.quoteType?.toUpperCase();
-      return t === "EQUITY" || t === "ETF";
-    })
-    .slice(0, 8);
+  const kept = quotes.filter((q2) => {
+    if (!q2.symbol) return false;
+    const t = q2.quoteType?.toUpperCase();
+    return t === "EQUITY" || t === "ETF";
+  });
+
+  // US-first ranking. Yahoo's native relevance ordering puts LSE/HKEX
+  // tickers ahead of NASDAQ ADRs for names like "HSBC" or "alibaba" — most
+  // of our users think US-by-default, so bubble US listings to the top.
+  //
+  // Heuristic: no ticker suffix = US (NYSE/NASDAQ/AMEX). Stable sort so
+  // within each bucket we preserve Yahoo's relevance ranking.
+  const usBucket: YQ[] = [];
+  const intlBucket: YQ[] = [];
+  for (const q2 of kept) {
+    const sym = q2.symbol!;
+    const hasSuffix = sym.includes(".");
+    const isUsExchange =
+      !hasSuffix ||
+      q2.exchange === "NMS" ||
+      q2.exchange === "NYQ" ||
+      q2.exchange === "NGM" ||
+      q2.exchange === "NCM" ||
+      q2.exchange === "PCX" ||
+      q2.exchange === "ASE";
+    (isUsExchange ? usBucket : intlBucket).push(q2);
+  }
+  const filtered = [...usBucket, ...intlBucket].slice(0, 8);
 
   // Fan out logo lookups. Finnhub's profile2 cache lives 24h, so repeat
   // searches for common tickers are free. Bounded at 8 per search.
