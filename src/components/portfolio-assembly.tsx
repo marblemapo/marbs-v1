@@ -21,6 +21,7 @@
  */
 
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 
 const CURRENCY_GLYPHS = ["$", "€", "£", "¥", "₩", "₿"] as const;
@@ -39,6 +40,15 @@ export function PortfolioAssembly({
   const message = complete ? "Net worth assembled." : "Gathering your net worth";
   const typed = useTypedText(message);
 
+  // Portal guard — `fixed inset-0` is broken by any transformed / filtered
+  // ancestor (the `fixed` becomes relative to that parent instead of the
+  // viewport). Mounting straight to <body> bypasses every wrapper so the
+  // overlay is guaranteed to cover the whole screen.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   // Lock body scroll while the overlay is mounted so the "takeover" is real.
   useEffect(() => {
     const prevOverflow = document.body.style.overflow;
@@ -56,7 +66,9 @@ export function PortfolioAssembly({
     };
   }, []);
 
-  return (
+  if (!mounted) return null;
+
+  const overlay = (
     <div
       className="fixed inset-0 z-[100] overflow-hidden flex flex-col items-center justify-center px-6"
       style={{
@@ -235,6 +247,8 @@ export function PortfolioAssembly({
       </div>
     </div>
   );
+
+  return createPortal(overlay, document.body);
 }
 
 /**

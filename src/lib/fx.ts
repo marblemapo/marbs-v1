@@ -33,7 +33,10 @@ export async function fetchFxRates(
     const url = `https://api.frankfurter.dev/v1/latest?from=${encodeURIComponent(
       base,
     )}&to=${uniqueQuotes.join(",")}`;
-    const res = await fetch(url, { next: { revalidate: 21600 } });
+    const res = await fetch(url, {
+      next: { revalidate: 21600 },
+      signal: AbortSignal.timeout(6000),
+    });
     if (res.ok) {
       const data = await res.json();
       primary = (data?.rates ?? {}) as Record<string, number>;
@@ -84,6 +87,7 @@ async function fetchYahooFxRate(
     const res = await fetch(url, {
       headers: { "User-Agent": YAHOO_UA },
       next: { revalidate: 21600 }, // 6h
+      signal: AbortSignal.timeout(6000),
     });
     if (!res.ok) return null;
     const data = await res.json();

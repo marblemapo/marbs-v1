@@ -115,6 +115,7 @@ async function searchYahoo(q: string): Promise<SearchResult[]> {
   const res = await fetch(url, {
     headers: { "User-Agent": YAHOO_UA },
     next: { revalidate: 300 },
+    signal: AbortSignal.timeout(6000),
   });
   if (!res.ok) return [];
 
@@ -257,7 +258,10 @@ async function searchFinnhub(q: string): Promise<SearchResult[]> {
   const key = process.env.FINNHUB_API_KEY;
   if (!key) return [];
   const url = `https://finnhub.io/api/v1/search?q=${encodeURIComponent(q)}&token=${key}`;
-  const res = await fetch(url, { next: { revalidate: 300 } });
+  const res = await fetch(url, {
+    next: { revalidate: 300 },
+    signal: AbortSignal.timeout(6000),
+  });
   if (!res.ok) return [];
 
   type FH = {
@@ -303,7 +307,10 @@ async function searchFinnhub(q: string): Promise<SearchResult[]> {
 
 async function searchCoinGecko(q: string): Promise<SearchResult[]> {
   const url = `https://api.coingecko.com/api/v3/search?query=${encodeURIComponent(q)}`;
-  const res = await fetch(url, { next: { revalidate: 300 } });
+  const res = await fetch(url, {
+    next: { revalidate: 300 },
+    signal: AbortSignal.timeout(6000),
+  });
   if (!res.ok) return [];
 
   type CG = {

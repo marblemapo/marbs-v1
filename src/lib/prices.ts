@@ -77,7 +77,10 @@ export async function fetchFinnhubProfile(symbol: string): Promise<{
     symbol,
   )}&token=${key}`;
   try {
-    const res = await fetch(url, { next: { revalidate: 86400 } }); // 1 day cache
+    const res = await fetch(url, {
+      next: { revalidate: 86400 }, // 1 day cache
+      signal: AbortSignal.timeout(8000),
+    });
     if (!res.ok) return null;
     const data = await res.json();
     if (!data || Object.keys(data).length === 0) return null;
@@ -124,7 +127,10 @@ export async function fetchFinnhubQuote(symbol: string): Promise<Quote | null> {
   if (!key) return null;
   const url = `https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(symbol)}&token=${key}`;
   try {
-    const res = await fetch(url, { next: { revalidate: 60 } });
+    const res = await fetch(url, {
+      next: { revalidate: 60 },
+      signal: AbortSignal.timeout(8000),
+    });
     if (!res.ok) return null;
     const data = await res.json();
     const price = typeof data?.c === "number" ? data.c : null;
@@ -165,6 +171,7 @@ export async function searchYahooSymbol(query: string): Promise<string | null> {
     const res = await fetch(url, {
       headers: { "User-Agent": YAHOO_UA },
       next: { revalidate: 300 },
+      signal: AbortSignal.timeout(8000),
     });
     if (!res.ok) return null;
 
@@ -204,6 +211,7 @@ export async function fetchYahooQuote(symbol: string): Promise<Quote | null> {
     const res = await fetch(url, {
       headers: { "User-Agent": YAHOO_UA }, // Yahoo blocks empty UAs from some IPs
       next: { revalidate: 60 }, // Next.js server cache, 60s
+      signal: AbortSignal.timeout(8000),
     });
     if (!res.ok) return null;
 
@@ -277,7 +285,10 @@ export async function fetchCoinGeckoQuote(
   )}&vs_currencies=${encodeURIComponent(vc)}&include_24hr_change=true`;
 
   try {
-    const res = await fetch(url, { next: { revalidate: 60 } });
+    const res = await fetch(url, {
+      next: { revalidate: 60 },
+      signal: AbortSignal.timeout(8000),
+    });
     if (!res.ok) return null;
 
     const data = await res.json();

@@ -74,7 +74,10 @@ export async function resolveCoinGeckoSlug(
     const url = `https://api.coingecko.com/api/v3/search?query=${encodeURIComponent(
       symbol,
     )}`;
-    const res = await fetch(url, { next: { revalidate: 3600 } });
+    const res = await fetch(url, {
+      next: { revalidate: 3600 },
+      signal: AbortSignal.timeout(6000),
+    });
     if (!res.ok) return null;
 
     const data = await res.json();
