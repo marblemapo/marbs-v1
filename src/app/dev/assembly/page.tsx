@@ -13,17 +13,33 @@
 import { useEffect, useRef, useState } from "react";
 import { AssemblyA } from "@/components/portfolio-assembly-variants/a-quiet";
 import { AssemblyB } from "@/components/portfolio-assembly-variants/b-vault";
+import { AssemblyB2 } from "@/components/portfolio-assembly-variants/b2-implosion";
+import { AssemblyB3 } from "@/components/portfolio-assembly-variants/b3-tumblers";
+import { AssemblyB4 } from "@/components/portfolio-assembly-variants/b4-progress-rings";
+import { AssemblyB5 } from "@/components/portfolio-assembly-variants/b5-polygon";
+import { AssemblyB6 } from "@/components/portfolio-assembly-variants/b6-bloom";
+import { AssemblyB7 } from "@/components/portfolio-assembly-variants/b7-scatter";
+import { AssemblyB8 } from "@/components/portfolio-assembly-variants/b8-orbits";
 import { AssemblyC } from "@/components/portfolio-assembly-variants/c-waterfall";
 import { AssemblyD } from "@/components/portfolio-assembly-variants/d-rings";
+import { AssemblyE } from "@/components/portfolio-assembly-variants/e-astral";
 import { cn } from "@/lib/utils";
 
-type Variant = "A" | "B" | "C" | "D";
+type Variant = "A" | "B" | "B2" | "B3" | "B4" | "B5" | "B6" | "B7" | "B8" | "C" | "D" | "E";
 
 const VARIANTS: { id: Variant; name: string; tag: string }[] = [
   { id: "A", name: "Quiet", tag: "Minimalist typography. Maximum negative space." },
   { id: "B", name: "Vault", tag: "Ceremonial. Rings pulse outward from a central core." },
+  { id: "B2", name: "Vault · Implosion", tag: "Rings contract inward to the core — assembling, not broadcasting." },
+  { id: "B3", name: "Vault · Tumblers", tag: "Concentric arcs rotate at different speeds. Locks still on complete." },
+  { id: "B4", name: "Vault · Progress rings", tag: "One ring materializes and locks per asset completed." },
+  { id: "B5", name: "Vault · Polygon", tag: "Hexagonal rings pulse outward — mechanical, not spiritual." },
+  { id: "B6", name: "Vault · Bloom", tag: "Subtle backdrop. Core wedges rotate open like petals at 100%." },
+  { id: "B7", name: "Vault · Scatter", tag: "Fragments fly home to the core as progress advances. Assembly made literal." },
+  { id: "B8", name: "Vault · Constellation", tag: "Dots circle the core; each ring settles in place as an asset is valued." },
   { id: "C", name: "Waterfall", tag: "Trading terminal. Columns of numbers stream past." },
   { id: "D", name: "Portfolio rings", tag: "Data-driven. One ring per asset fills as it settles." },
+  { id: "E", name: "Astral", tag: "Aqua orbits + W core, bracketed progress bar, '// comment' subtitle. Matches live wealth.marbs.io." },
 ];
 
 export default function AssemblyPreviewPage() {
@@ -178,8 +194,16 @@ export default function AssemblyPreviewPage() {
 
       {active === "A" && <AssemblyA total={total} done={done} />}
       {active === "B" && <AssemblyB total={total} done={done} />}
+      {active === "B2" && <AssemblyB2 total={total} done={done} />}
+      {active === "B3" && <AssemblyB3 total={total} done={done} />}
+      {active === "B4" && <AssemblyB4 total={total} done={done} />}
+      {active === "B5" && <AssemblyB5 total={total} done={done} />}
+      {active === "B6" && <AssemblyB6 total={total} done={done} />}
+      {active === "B7" && <AssemblyB7 total={total} done={done} />}
+      {active === "B8" && <AssemblyB8 total={total} done={done} />}
       {active === "C" && <AssemblyC total={total} done={done} />}
       {active === "D" && <AssemblyD total={total} done={done} />}
+      {active === "E" && <AssemblyE total={total} done={done} />}
     </main>
   );
 }

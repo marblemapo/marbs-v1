@@ -1,15 +1,15 @@
 "use client";
 
 /**
- * Variant B — Vault reveal.
- * Concentric rings pulse outward from a central glyph. Feels ceremonial,
- * like a vault door opening. Sparse, but with motion.
+ * Variant B2 — Implosion.
+ * Rings contract *inward* to a central core. Feels like pieces
+ * converging to assemble, rather than broadcasting outward.
  */
 
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
-export function AssemblyB({ total, done }: { total: number; done: number }) {
+export function AssemblyB2({ total, done }: { total: number; done: number }) {
   const complete = total > 0 && done >= total;
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
 
@@ -34,7 +34,6 @@ export function AssemblyB({ total, done }: { total: number; done: number }) {
     >
       <style>{css}</style>
 
-      {/* Expanding rings */}
       <div className="relative w-[min(90vw,560px)] h-[min(90vw,560px)] flex items-center justify-center">
         {[0, 1, 2, 3, 4].map((i) => (
           <div
@@ -44,17 +43,16 @@ export function AssemblyB({ total, done }: { total: number; done: number }) {
             style={{
               width: "100%",
               height: "100%",
-              animation: `bb-ring 3.2s ease-out ${i * 0.64}s infinite`,
+              animation: `b2-ring 3.2s ease-in ${i * 0.64}s infinite`,
             }}
           />
         ))}
 
-        {/* Central core */}
         <div
           aria-hidden
           className="relative z-10 w-20 h-20 rounded-full bg-[#7FFFD4] flex items-center justify-center"
           style={{
-            animation: "bb-core 1.8s ease-in-out infinite",
+            animation: "b2-core 1.8s ease-in-out infinite",
             boxShadow:
               "0 0 40px rgba(127,255,212,0.8), 0 0 80px rgba(127,255,212,0.3)",
           }}
@@ -63,7 +61,6 @@ export function AssemblyB({ total, done }: { total: number; done: number }) {
         </div>
       </div>
 
-      {/* Status text */}
       <div className="absolute bottom-[14vh] flex flex-col items-center gap-4">
         <div className="font-display text-2xl sm:text-3xl font-bold tracking-[-0.02em] text-center">
           {complete ? "Net worth assembled." : "Assembling your net worth…"}
@@ -83,13 +80,13 @@ export function AssemblyB({ total, done }: { total: number; done: number }) {
 }
 
 const css = `
-  @keyframes bb-ring {
-    0%   { transform: scale(0.12); opacity: 0.8; border-width: 2px; }
-    80%  { opacity: 0.08; border-width: 1px; }
-    100% { transform: scale(1); opacity: 0; border-width: 1px; }
+  @keyframes b2-ring {
+    0%   { transform: scale(1);    opacity: 0;   border-width: 1px; }
+    20%  { opacity: 0.08; }
+    100% { transform: scale(0.12); opacity: 0.9; border-width: 2px; }
   }
-  @keyframes bb-core {
-    0%, 100% { transform: scale(1); }
+  @keyframes b2-core {
+    0%, 100% { transform: scale(1);    }
     50%      { transform: scale(1.12); }
   }
 `;

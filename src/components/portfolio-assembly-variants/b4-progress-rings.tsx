@@ -1,15 +1,15 @@
 "use client";
 
 /**
- * Variant B — Vault reveal.
- * Concentric rings pulse outward from a central glyph. Feels ceremonial,
- * like a vault door opening. Sparse, but with motion.
+ * Variant B4 — Progress-locked rings.
+ * One ring materializes and locks in place per asset completed.
+ * Motion is tied to real progress, not a loop.
  */
 
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
-export function AssemblyB({ total, done }: { total: number; done: number }) {
+export function AssemblyB4({ total, done }: { total: number; done: number }) {
   const complete = total > 0 && done >= total;
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
 
@@ -24,6 +24,8 @@ export function AssemblyB({ total, done }: { total: number; done: number }) {
   }, []);
   if (!mounted) return null;
 
+  const rings = Array.from({ length: total }, (_, i) => i);
+
   const overlay = (
     <div
       className="fixed inset-0 z-[100] flex flex-col items-center justify-center"
@@ -34,36 +36,50 @@ export function AssemblyB({ total, done }: { total: number; done: number }) {
     >
       <style>{css}</style>
 
-      {/* Expanding rings */}
       <div className="relative w-[min(90vw,560px)] h-[min(90vw,560px)] flex items-center justify-center">
-        {[0, 1, 2, 3, 4].map((i) => (
-          <div
-            key={i}
-            aria-hidden
-            className="absolute rounded-full border border-[#7FFFD4]"
-            style={{
-              width: "100%",
-              height: "100%",
-              animation: `bb-ring 3.2s ease-out ${i * 0.64}s infinite`,
-            }}
-          />
-        ))}
+        {rings.map((i) => {
+          const ringDone = i < done;
+          // Evenly distribute ring sizes from ~25% to 100%.
+          const size = 25 + (i / Math.max(total - 1, 1)) * 75;
+          return (
+            <div
+              key={i}
+              aria-hidden
+              className="absolute rounded-full border"
+              style={{
+                width: `${size}%`,
+                height: `${size}%`,
+                borderColor: ringDone
+                  ? "#7FFFD4"
+                  : "rgba(127,255,212,0.12)",
+                borderWidth: ringDone ? 2 : 1,
+                transform: ringDone ? "scale(1)" : "scale(0.94)",
+                opacity: ringDone ? 1 : 0.5,
+                transition:
+                  "transform 0.55s cubic-bezier(0.22,1,0.36,1), opacity 0.4s ease, border-color 0.4s ease, border-width 0.4s ease",
+                boxShadow: ringDone
+                  ? "0 0 20px rgba(127,255,212,0.25)"
+                  : "none",
+                animation: ringDone ? "b4-lock 0.6s ease-out" : "none",
+              }}
+            />
+          );
+        })}
 
-        {/* Central core */}
         <div
           aria-hidden
           className="relative z-10 w-20 h-20 rounded-full bg-[#7FFFD4] flex items-center justify-center"
           style={{
-            animation: "bb-core 1.8s ease-in-out infinite",
             boxShadow:
               "0 0 40px rgba(127,255,212,0.8), 0 0 80px rgba(127,255,212,0.3)",
+            transform: complete ? "scale(1.1)" : "scale(1)",
+            transition: "transform 0.6s cubic-bezier(0.22,1,0.36,1)",
           }}
         >
           <span className="font-display text-3xl font-bold text-black">W</span>
         </div>
       </div>
 
-      {/* Status text */}
       <div className="absolute bottom-[14vh] flex flex-col items-center gap-4">
         <div className="font-display text-2xl sm:text-3xl font-bold tracking-[-0.02em] text-center">
           {complete ? "Net worth assembled." : "Assembling your net worth…"}
@@ -83,13 +99,9 @@ export function AssemblyB({ total, done }: { total: number; done: number }) {
 }
 
 const css = `
-  @keyframes bb-ring {
-    0%   { transform: scale(0.12); opacity: 0.8; border-width: 2px; }
-    80%  { opacity: 0.08; border-width: 1px; }
-    100% { transform: scale(1); opacity: 0; border-width: 1px; }
-  }
-  @keyframes bb-core {
-    0%, 100% { transform: scale(1); }
-    50%      { transform: scale(1.12); }
+  @keyframes b4-lock {
+    0%   { transform: scale(0.6); opacity: 0;   }
+    60%  { transform: scale(1.05); opacity: 1;  }
+    100% { transform: scale(1);    opacity: 1;  }
   }
 `;
