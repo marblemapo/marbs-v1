@@ -35,10 +35,9 @@ export function AssemblyE({ total, done }: { total: number; done: number }) {
     const t = requestAnimationFrame(() => setVisible(true));
     return () => cancelAnimationFrame(t);
   }, []);
-  useEffect(() => {
-    // Fade out once the sequence completes.
-    if (complete) setVisible(false);
-  }, [complete]);
+  // Stay visible until the parent unmounts us. The wizard holds the
+  // overlay mounted after `complete` for a beat before navigating —
+  // fading to opacity 0 here would reveal the form behind it.
   useEffect(() => {
     const prevOverflow = document.body.style.overflow;
     const prevPaddingRight = document.body.style.paddingRight;
