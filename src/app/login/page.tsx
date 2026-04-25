@@ -210,7 +210,7 @@ export default function LoginPage() {
                   aria-disabled={status === "sending" || !email}
                   className="f3-cta"
                 >
-                  {status === "sending" ? "Sending…" : "Send link & code"}
+                  {status === "sending" ? "Sending…" : "Sign in"}
                 </button>
                 <span className="font-plex text-[12px] text-text-muted">
                   Magic link or 6-digit code · no password
