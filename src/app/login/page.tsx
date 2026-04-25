@@ -1,16 +1,20 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Input } from "@/components/ui/input";
 
+type Status = "idle" | "sending" | "sent" | "verifying" | "error";
+
 export default function LoginPage() {
+  const router = useRouter();
   const [email, setEmail] = useState("");
-  const [status, setStatus] = useState<"idle" | "sending" | "sent" | "error">(
-    "idle",
-  );
+  const [code, setCode] = useState("");
+  const [status, setStatus] = useState<Status>("idle");
   const [errorMsg, setErrorMsg] = useState("");
+  const [codeError, setCodeError] = useState("");
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -32,6 +36,34 @@ export default function LoginPage() {
     } else {
       setStatus("sent");
     }
+  }
+
+  async function handleVerifyCode(e: FormEvent) {
+    e.preventDefault();
+    const token = code.trim();
+    if (token.length !== 6) {
+      setCodeError("Enter the 6-digit code from your email.");
+      return;
+    }
+    setStatus("verifying");
+    setCodeError("");
+
+    const supabase = createClient();
+    const { error } = await supabase.auth.verifyOtp({
+      email,
+      token,
+      type: "email",
+    });
+
+    if (error) {
+      setStatus("sent");
+      setCodeError(error.message);
+      return;
+    }
+
+    // Middleware routes new users to /onboarding, existing users to /dashboard.
+    router.push("/dashboard");
+    router.refresh();
   }
 
   return (
@@ -69,12 +101,12 @@ export default function LoginPage() {
           <span className="text-[#7FFFD4]">Wealth.</span>
         </h1>
         <p className="font-plex text-sm text-text-muted max-w-[460px] mb-10">
-          {"// enter your email. we'll send a magic link. no password to remember."}
+          {"// enter your email. we'll send a link and a 6-digit code. no password to remember."}
         </p>
 
         {/* Form block — constrained to the form itself */}
         <div className="max-w-[460px]">
-          {status === "sent" ? (
+          {status === "sent" || status === "verifying" ? (
             <div className="rounded-[14px] border border-white/[0.08] bg-[#0A0A0A] p-6">
               <div className="flex items-center gap-2 font-plex text-[13px] font-semibold text-[#7FFFD4] mb-3">
                 <span
@@ -83,15 +115,67 @@ export default function LoginPage() {
                 />
                 CHECK YOUR EMAIL
               </div>
-              <p className="text-sm text-text-secondary leading-relaxed mb-4">
-                We sent a magic link to{" "}
+              <p className="text-sm text-text-secondary leading-relaxed mb-5">
+                We sent a magic link and a 6-digit code to{" "}
                 <span className="font-plex text-foreground">{email}</span>.
-                Click it to finish signing in. You can close this tab.
+                Click the link, or paste the code below.
               </p>
+
+              <form onSubmit={handleVerifyCode} className="flex flex-col gap-3">
+                <label
+                  htmlFor="code"
+                  className="font-plex text-[11px] text-text-muted uppercase tracking-[0.14em] font-medium"
+                >
+                  {"// 6-digit code"}
+                </label>
+                <Input
+                  id="code"
+                  type="text"
+                  name="code"
+                  value={code}
+                  onChange={(e) =>
+                    setCode(e.target.value.replace(/\D/g, "").slice(0, 6))
+                  }
+                  placeholder="123456"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  pattern="[0-9]{6}"
+                  maxLength={6}
+                  required
+                  autoFocus
+                  disabled={status === "verifying"}
+                  className="h-12 bg-[#0A0A0A] border-white/[0.08] font-plex text-lg tracking-[0.4em] tabular-nums placeholder:text-text-muted/40 placeholder:tracking-[0.4em] focus-visible:border-[#7FFFD4] focus-visible:ring-[#7FFFD4]/30"
+                />
+                <div className="flex items-center gap-4 mt-2">
+                  <button
+                    type="submit"
+                    disabled={status === "verifying" || code.length !== 6}
+                    aria-disabled={
+                      status === "verifying" || code.length !== 6
+                    }
+                    className="f3-cta"
+                  >
+                    {status === "verifying" ? "Verifying…" : "Verify code"}
+                  </button>
+                  <span className="font-plex text-[12px] text-text-muted">
+                    Or click the link in your email
+                  </span>
+                </div>
+                {codeError && (
+                  <p className="font-plex text-sm text-loss mt-1">
+                    {codeError}
+                  </p>
+                )}
+              </form>
+
               <button
                 type="button"
-                onClick={() => setStatus("idle")}
-                className="font-plex text-[11px] text-text-muted hover:text-[#7FFFD4] transition-colors tracking-wider uppercase"
+                onClick={() => {
+                  setStatus("idle");
+                  setCode("");
+                  setCodeError("");
+                }}
+                className="font-plex text-[11px] text-text-muted hover:text-[#7FFFD4] transition-colors tracking-wider uppercase mt-5"
               >
                 Wrong email? Start over
               </button>
@@ -126,12 +210,10 @@ export default function LoginPage() {
                   aria-disabled={status === "sending" || !email}
                   className="f3-cta"
                 >
-                  {status === "sending"
-                    ? "Sending magic link…"
-                    : "Send magic link"}
+                  {status === "sending" ? "Sending…" : "Send link & code"}
                 </button>
                 <span className="font-plex text-[12px] text-text-muted">
-                  Magic link · no password
+                  Magic link or 6-digit code · no password
                 </span>
               </div>
               {status === "error" && (
