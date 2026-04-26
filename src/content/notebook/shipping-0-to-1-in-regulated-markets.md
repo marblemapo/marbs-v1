@@ -4,45 +4,45 @@ description: Notes from launching a prediction market platform in under two mont
 date: 2026-04-20
 ---
 
-In 2026 I'm the project leader for the launch of OG — a new prediction market
-platform spun out of Crypto.com as a standalone product. Concept to live in
-under two months. 200+ people across engineering, product, compliance, legal,
-risk, ops, and external partners — market makers, the works.
-CFTC oversight the entire way.
+In 2026 I had the chance to help lead the launch of OG — a new prediction
+market platform spun out of Crypto.com as a standalone product. Concept to
+live in under two months, with 200+ people across engineering, product,
+compliance, legal, risk, ops, and external partners — market makers, the
+works. CFTC oversight the entire way.
 
-My job was to own delivery end-to-end — shaping the product alongside eng and
-design, driving the trade-off calls, and making sure 200 people building in
-parallel stayed aligned on the same version of the plan. A few things I took
-away:
+My role was to help drive delivery end-to-end — shaping the product
+alongside eng and design, holding the trade-off conversations, and trying
+to keep 200 people moving against the same version of the plan. I'm still
+learning from it, but a few things stood out:
 
 ### 1. Decide what "done" means before the first sprint
 
-In regulated work, "feature complete" and "shippable" are different things. We
-split scope into three buckets early: *launch-critical*, *fast-follow*, and
-*maybe-never*. Everything got assigned an owner, and nothing moved buckets
-without a documented reason. When the timeline got tight — and it always does —
-that triage doc was what kept real-time scope trade-offs from turning into
-politics.
+In regulated work, "feature complete" and "shippable" aren't the same. We
+tried to split scope into three buckets early: *launch-critical*,
+*fast-follow*, and *maybe-never*. Everything got an owner, and we tried not
+to move things between buckets without a written reason. When the timeline
+got tight — and it did — that doc was what kept scope trade-offs from
+turning into politics.
 
 ### 2. The critical path is usually people, not code
 
-Engineering velocity was never the bottleneck. Legal review windows, compliance
-sign-off, market-maker onboarding, vendor integrations — those were. I
-stopped mapping the critical path by ticket and started mapping it by
-*decision*: who needs to say yes, by when, and what do they need to see to say
-it. That one reframing bought us weeks.
+Engineering velocity rarely seemed to be the bottleneck. Legal review
+windows, compliance sign-off, market-maker onboarding, vendor integrations
+— those were. I started mapping the critical path less by ticket and more
+by *decision*: who needs to say yes, by when, and what do they need to see
+to say it. That reframing helped more than I expected.
 
-### 3. Write down every trade-off
+### 3. Write things down
 
-I forced the trade-off calls through and made sure the whole team landed on
-the same version of the answer. If a decision got made and didn't get written
-down, it would be re-litigated three weeks later with less context and more
-tired people. So every call got a short summary: what we decided, what we
-deferred, and why. Boring, but it's what kept 200 people pulling in the same
-direction.
+The trade-off calls were easier when we got everyone to the same version
+of the answer and wrote it down. If a decision didn't get captured, it
+tended to get re-litigated three weeks later with less context and more
+tired people. So we tried to keep a short summary for each: what we
+decided, what we deferred, why. Boring, but it helped.
 
 ---
 
-What compounds is the operating system underneath — clear scope, decision
-velocity, and a written record. That's what lets a 200-person effort move
-like a small one.
+A lot of this is stuff I'm still figuring out. But the pattern I keep
+coming back to is that what compounds is the operating system underneath —
+clear scope, decision velocity, a written record. When that works, a big
+effort can move a little more like a small one.
