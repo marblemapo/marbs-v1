@@ -166,7 +166,7 @@ export async function upsertTodaySnapshot(userId: string): Promise<void> {
 
   const today = isoDateUTC(new Date());
 
-  await admin
+  const { error } = await admin
     .from("net_worth_snapshots")
     .upsert(
       {
@@ -180,6 +180,13 @@ export async function upsertTodaySnapshot(userId: string): Promise<void> {
       },
       { onConflict: "user_id,snapshot_date" },
     );
+  if (error) {
+    console.error(
+      `[net-worth] upsertTodaySnapshot failed for ${userId}:`,
+      error.message,
+    );
+    throw new Error(error.message);
+  }
 }
 
 /**
@@ -205,7 +212,7 @@ export async function upsertSnapshotForDate(
   // Don't clobber a real tracked snapshot. Backfilled rows can be replaced.
   if (existing && existing.is_backfilled === false) return;
 
-  await admin
+  const { error } = await admin
     .from("net_worth_snapshots")
     .upsert(
       {
@@ -219,6 +226,13 @@ export async function upsertSnapshotForDate(
       },
       { onConflict: "user_id,snapshot_date" },
     );
+  if (error) {
+    console.error(
+      `[net-worth] upsertSnapshotForDate failed for ${userId}/${dateIso}:`,
+      error.message,
+    );
+    throw new Error(error.message);
+  }
 }
 
 /** Format a Date as ISO yyyy-mm-dd in UTC. */
@@ -263,27 +277,47 @@ export async function backfillUserHistory(userId: string): Promise<void> {
   const assets = (assetsRaw ?? []) as AssetForBackfill[];
   if (assets.length === 0) return;
 
-  // Phase 1: fetch missing price + FX history.
-  // Serialize per asset to keep external API load reasonable.
-  for (const asset of assets) {
-    if (!asset.external_id) continue;
-    if (asset.price_source === "manual" || asset.asset_class === "cash") continue;
-    await backfillPriceHistoryForAsset(admin, {
-      external_id: asset.external_id,
-      source: asset.price_source,
-      native_currency: asset.native_currency,
-      symbol: asset.symbol,
-      asset_class: asset.asset_class,
-    });
-  }
+  // Phase 1: fetch missing price + FX history. Run all fetches in parallel
+  // — each fetcher has its own 36h cache gate so re-runs are cheap, and
+  // parallelizing keeps total wall time under Vercel's function timeout
+  // even on Hobby (max 60s).
+  const priceFetches = assets
+    .filter(
+      (a) =>
+        a.external_id &&
+        a.price_source !== "manual" &&
+        a.asset_class !== "cash",
+    )
+    .map((a) =>
+      backfillPriceHistoryForAsset(admin, {
+        external_id: a.external_id!,
+        source: a.price_source,
+        native_currency: a.native_currency,
+        symbol: a.symbol,
+        asset_class: a.asset_class,
+      }).catch((e) => {
+        console.error(
+          `[backfill] price fetch failed for ${a.external_id}:`,
+          e instanceof Error ? e.message : String(e),
+        );
+        return { inserted: 0, oldestDate: null };
+      }),
+    );
 
   const currencies = Array.from(
     new Set(assets.map((a) => a.native_currency.toUpperCase())),
+  ).filter((c) => c !== "USD");
+  const fxFetches = currencies.map((c) =>
+    backfillFxHistoryForCurrency(admin, c).catch((e) => {
+      console.error(
+        `[backfill] FX fetch failed for ${c}:`,
+        e instanceof Error ? e.message : String(e),
+      );
+      return { inserted: 0, oldestDate: null };
+    }),
   );
-  for (const currency of currencies) {
-    if (currency === "USD") continue;
-    await backfillFxHistoryForCurrency(admin, currency);
-  }
+
+  await Promise.all([...priceFetches, ...fxFetches]);
 
   // Phase 2: compute synthetic snapshots from local data.
   await recomputeBackfillRange(userId);
@@ -540,26 +574,42 @@ export async function recomputeBackfillRange(userId: string): Promise<void> {
 
   // Replace existing backfilled rows for this user with the fresh compute.
   // We never touch is_backfilled=false rows (real tracked snapshots).
-  await admin
+  const { error: deleteErr } = await admin
     .from("net_worth_snapshots")
     .delete()
     .eq("user_id", userId)
     .eq("is_backfilled", true);
+  if (deleteErr) {
+    console.error(
+      `[backfill] delete failed for ${userId}:`,
+      deleteErr.message,
+    );
+    throw new Error(deleteErr.message);
+  }
 
   if (synthetic.length === 0) return;
 
   const CHUNK = 500;
+  let totalInserted = 0;
   for (let i = 0; i < synthetic.length; i += CHUNK) {
     const slice = synthetic.slice(i, i + CHUNK);
-    const { error } = await admin
+    const { error, count } = await admin
       .from("net_worth_snapshots")
       .upsert(slice, {
         onConflict: "user_id,snapshot_date",
         ignoreDuplicates: true, // never overwrite a real (non-backfilled) row
+        count: "exact",
       });
     if (error) {
-      console.warn("[backfill] insert failed:", error.message);
-      break;
+      console.error(
+        `[backfill] insert failed at chunk ${i}/${synthetic.length} for ${userId}:`,
+        error.message,
+      );
+      throw new Error(error.message);
     }
+    totalInserted += count ?? slice.length;
   }
+  console.log(
+    `[backfill] inserted ${totalInserted}/${synthetic.length} backfilled rows for ${userId}`,
+  );
 }

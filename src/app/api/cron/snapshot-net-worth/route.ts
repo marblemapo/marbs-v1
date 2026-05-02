@@ -3,7 +3,10 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { upsertSnapshotForDate, isoDateUTC } from "@/lib/net-worth";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 300;
+// Hobby tier caps at 60s — keep this conservative so deploys succeed on
+// every plan. Pro/Enterprise can raise this if needed for very large
+// user bases.
+export const maxDuration = 60;
 
 /**
  * Daily cron — runs at 00:10 UTC. For every user who owns at least one asset,
