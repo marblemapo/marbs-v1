@@ -23,6 +23,7 @@ import {
   type TokenBalance,
 } from "@/lib/alchemy";
 import { resolveTokenSlugs, type TokenSlugRow } from "@/lib/eth-tokens";
+import { upsertTodaySnapshot } from "@/lib/net-worth";
 
 const DUST_USD = 1;
 const SIWE_MAX_AGE_MS = 5 * 60 * 1000;
@@ -149,6 +150,7 @@ export async function connectWallet(
   const syncResult = await runSync(wallet.id, user.id, resolved.address);
   if (!syncResult.ok) return { ok: false, error: syncResult.error };
 
+  after(() => upsertTodaySnapshot(user.id));
   revalidatePath("/dashboard");
   return {
     ok: true,
@@ -177,6 +179,7 @@ export async function resyncWallet(
   const result = await runSync(wallet.id, user.id, wallet.address);
   if (!result.ok) return { ok: false, error: result.error };
 
+  after(() => upsertTodaySnapshot(user.id));
   revalidatePath("/dashboard");
   return {
     ok: true,
@@ -230,6 +233,7 @@ export async function disconnectWallet(
     .eq("id", walletId);
   if (error) return { ok: false, error: error.message };
 
+  if (!opts.keepAssets) after(() => upsertTodaySnapshot(user.id));
   revalidatePath("/dashboard");
   return { ok: true };
 }

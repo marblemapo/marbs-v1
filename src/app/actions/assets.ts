@@ -12,6 +12,7 @@ import {
 } from "@/lib/prices";
 import { resolveCoinGeckoSlug } from "@/lib/crypto-slugs";
 import { etfLogoUrl } from "@/lib/etf-logos";
+import { upsertTodaySnapshot } from "@/lib/net-worth";
 
 type AssetClass = "equity" | "etf" | "crypto" | "cash";
 type PriceSource = "yahoo" | "coingecko" | "finnhub" | "manual";
@@ -63,6 +64,7 @@ export async function updateAssetQuantity(
 
   if (error) return { ok: false, error: error.message };
 
+  after(() => upsertTodaySnapshot(user.id));
   revalidatePath("/dashboard");
   return { ok: true };
 }
@@ -139,6 +141,7 @@ export async function deleteAsset(assetId: string): Promise<MutateResult> {
   const { error } = await supabase.from("assets").delete().eq("id", assetId);
   if (error) return { ok: false, error: error.message };
 
+  after(() => upsertTodaySnapshot(user.id));
   revalidatePath("/dashboard");
   return { ok: true };
 }
@@ -382,6 +385,7 @@ export async function addAsset(
     });
   }
 
+  after(() => upsertTodaySnapshot(user.id));
   revalidatePath("/dashboard");
   return { ok: true, assetId };
 }
