@@ -51,7 +51,7 @@ export async function fetchYahooHistory(
     const res = await fetch(url, {
       headers: { "User-Agent": YAHOO_UA },
       next: { revalidate: 86400 }, // 24h
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(8000), // fail fast; fallback to CoinGecko for crypto
     });
     if (!res.ok) return null;
     const data = await res.json();
@@ -104,7 +104,7 @@ export async function fetchCoinGeckoHistory(
     )}&days=365&interval=daily`;
     const res = await fetch(url, {
       next: { revalidate: 86400 },
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(8000),
     });
     if (!res.ok) return null;
     const data = await res.json();
