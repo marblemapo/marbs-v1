@@ -12,11 +12,13 @@ import {
   type ConnectedWalletRow,
 } from "@/components/connected-wallets-section";
 import { NetWorthHero } from "@/components/networth-hero";
+import { NetWorthTrendCard } from "@/components/networth-trend-card";
 import { EmptyHoldingsCard } from "@/components/empty-holdings-card";
 import { DangerZone } from "@/components/danger-zone";
 import { CurrencyProvider } from "@/components/currency-context";
 import { fetchFxRates, convertFx } from "@/lib/fx";
 import { fetchPrice } from "@/lib/prices";
+import { backfillUserHistory } from "@/lib/net-worth";
 
 const PRICE_TTL_MS = 10 * 60 * 1000;
 
@@ -66,6 +68,21 @@ export default async function DashboardPage() {
         console.log(`[dashboard] backfilled ${res.updated} asset logo(s)`);
       }
     });
+  }
+
+  // Trigger one-shot history backfill for users who have assets but no
+  // backfilled rows yet (newly onboarded, or pre-existing users on first
+  // dashboard load after this feature ships). Idempotent: the orchestrator
+  // skips already-cached price/FX history within 36h.
+  if ((assets ?? []).length > 0) {
+    const { count: backfilledCount } = await supabase
+      .from("net_worth_snapshots")
+      .select("*", { count: "exact", head: true })
+      .eq("user_id", user.id)
+      .eq("is_backfilled", true);
+    if ((backfilledCount ?? 0) === 0) {
+      after(() => backfillUserHistory(user.id));
+    }
   }
 
   const assetIds = (assets ?? []).map((a) => a.id);
@@ -302,6 +319,8 @@ export default async function DashboardPage() {
               previous_value_native: r.previous_value_native,
             }))}
           />
+
+          <NetWorthTrendCard />
 
           <ConnectedWalletsSection
             wallets={connectedWallets}

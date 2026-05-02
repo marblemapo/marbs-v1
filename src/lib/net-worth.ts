@@ -11,6 +11,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { fetchFxRates } from "@/lib/fx";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { backfillPriceHistoryForAsset } from "@/lib/historical-prices";
+import { backfillFxHistoryForCurrency } from "@/lib/historical-fx";
+
+const BACKFILL_DAYS = 1825; // ~5 years
 
 export type AssetClassKey = "equity" | "etf" | "crypto" | "cash";
 
@@ -220,4 +224,342 @@ export async function upsertSnapshotForDate(
 /** Format a Date as ISO yyyy-mm-dd in UTC. */
 export function isoDateUTC(d: Date): string {
   return d.toISOString().slice(0, 10);
+}
+
+// ---------------------------------------------------------------------------
+// Backfill / synthetic-snapshot compute
+// ---------------------------------------------------------------------------
+
+type AssetForBackfill = {
+  id: string;
+  external_id: string | null;
+  symbol: string | null;
+  asset_class: AssetClassKey;
+  native_currency: string;
+  price_source: "yahoo" | "coingecko" | "finnhub" | "manual";
+};
+
+/**
+ * Backfill the user's full history. Two phases:
+ *
+ *   1. EXTERNAL FETCH — populate `price_history` and `fx_rate_history` for
+ *      every asset / currency the user holds, going back ~5 years.
+ *   2. SYNTHETIC COMPUTE — for each day in the range, compute net worth
+ *      using today's holdings × that day's prices/FX, write to
+ *      `net_worth_snapshots` with is_backfilled=true.
+ *
+ * Idempotent: re-running skips already-cached price/FX rows and uses
+ * `on conflict do nothing` for snapshots so real (non-backfilled) rows are
+ * never overwritten. Best-effort per asset — one failed fetch doesn't
+ * poison the rest.
+ */
+export async function backfillUserHistory(userId: string): Promise<void> {
+  const admin = createAdminClient();
+
+  const { data: assetsRaw } = await admin
+    .from("assets")
+    .select("id, external_id, symbol, asset_class, native_currency, price_source")
+    .eq("user_id", userId);
+  const assets = (assetsRaw ?? []) as AssetForBackfill[];
+  if (assets.length === 0) return;
+
+  // Phase 1: fetch missing price + FX history.
+  // Serialize per asset to keep external API load reasonable.
+  for (const asset of assets) {
+    if (!asset.external_id) continue;
+    if (asset.price_source === "manual" || asset.asset_class === "cash") continue;
+    await backfillPriceHistoryForAsset(admin, {
+      external_id: asset.external_id,
+      source: asset.price_source,
+      native_currency: asset.native_currency,
+      symbol: asset.symbol,
+      asset_class: asset.asset_class,
+    });
+  }
+
+  const currencies = Array.from(
+    new Set(assets.map((a) => a.native_currency.toUpperCase())),
+  );
+  for (const currency of currencies) {
+    if (currency === "USD") continue;
+    await backfillFxHistoryForCurrency(admin, currency);
+  }
+
+  // Phase 2: compute synthetic snapshots from local data.
+  await recomputeBackfillRange(userId);
+}
+
+/**
+ * Recompute the user's backfilled (synthetic) snapshots from existing
+ * price_history + fx_rate_history. Does NOT re-fetch external data.
+ *
+ * Called when the portfolio changes — `addAsset`, `updateAssetQuantity`,
+ * `deleteAsset`, wallet sync — so the dashed-line portion of the chart
+ * reflects the latest "today's holdings".
+ */
+export async function recomputeBackfillRange(userId: string): Promise<void> {
+  const admin = createAdminClient();
+
+  const { data: assetsRaw } = await admin
+    .from("assets")
+    .select("id, external_id, symbol, asset_class, native_currency, price_source")
+    .eq("user_id", userId);
+  const assets = (assetsRaw ?? []) as AssetForBackfill[];
+  if (assets.length === 0) {
+    // No portfolio → nothing to backfill. Drop any stale backfilled rows.
+    await admin
+      .from("net_worth_snapshots")
+      .delete()
+      .eq("user_id", userId)
+      .eq("is_backfilled", true);
+    return;
+  }
+
+  // Latest quantity per asset (constant-quantity assumption for backfill).
+  const assetIds = assets.map((a) => a.id);
+  const { data: snaps } = await admin
+    .from("balance_snapshots")
+    .select("asset_id, quantity, snapshot_at")
+    .in("asset_id", assetIds)
+    .order("snapshot_at", { ascending: false });
+  const latestQty = new Map<string, number>();
+  for (const s of snaps ?? []) {
+    if (!latestQty.has(s.asset_id)) latestQty.set(s.asset_id, Number(s.quantity));
+  }
+
+  // Determine the onboarding cutoff — the earliest snapshot_at across all
+  // assets. The synthetic range spans (today - 5y) up to (cutoff - 1).
+  let onboardingDate: Date | null = null;
+  for (const s of snaps ?? []) {
+    const d = new Date(s.snapshot_at);
+    if (!onboardingDate || d < onboardingDate) onboardingDate = d;
+  }
+  if (!onboardingDate) return;
+
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+  const startDate = new Date(today.getTime() - BACKFILL_DAYS * 86_400_000);
+  const endDate = new Date(onboardingDate);
+  endDate.setUTCHours(0, 0, 0, 0);
+  endDate.setUTCDate(endDate.getUTCDate() - 1);
+
+  if (endDate.getTime() < startDate.getTime()) {
+    // User onboarded ≥ 5y ago — nothing to backfill before their data.
+    await admin
+      .from("net_worth_snapshots")
+      .delete()
+      .eq("user_id", userId)
+      .eq("is_backfilled", true);
+    return;
+  }
+
+  // Load all relevant price_history rows.
+  const externalIds = assets
+    .map((a) => a.external_id)
+    .filter((x): x is string => x != null);
+
+  const priceSeriesByAsset = new Map<string, Array<{ date: string; price: number }>>();
+  if (externalIds.length) {
+    const { data: ph } = await admin
+      .from("price_history")
+      .select("external_id, source, observation_date, price_native")
+      .in("external_id", externalIds)
+      .order("observation_date", { ascending: true });
+    for (const row of ph ?? []) {
+      const key = `${row.external_id}|${row.source}`;
+      const arr = priceSeriesByAsset.get(key) ?? [];
+      arr.push({
+        date: row.observation_date,
+        price: Number(row.price_native),
+      });
+      priceSeriesByAsset.set(key, arr);
+    }
+  }
+
+  // Load FX history for each non-USD currency.
+  const fxSeriesByCurrency = new Map<string, Array<{ date: string; rate: number }>>();
+  const currencies = Array.from(
+    new Set(assets.map((a) => a.native_currency.toUpperCase())),
+  ).filter((c) => c !== "USD");
+  if (currencies.length) {
+    const { data: fx } = await admin
+      .from("fx_rate_history")
+      .select("quote, observation_date, rate")
+      .eq("base", "USD")
+      .in("quote", currencies)
+      .order("observation_date", { ascending: true });
+    for (const row of fx ?? []) {
+      const arr = fxSeriesByCurrency.get(row.quote) ?? [];
+      arr.push({ date: row.observation_date, rate: Number(row.rate) });
+      fxSeriesByCurrency.set(row.quote, arr);
+    }
+  }
+
+  // Today's USD value per asset — denominator for coverage_pct. Resolves
+  // per-asset (computeCurrentNetWorthUSD only returns aggregates) using the
+  // same price_cache + FX-spot logic.
+  const todayUsdByAsset = new Map<string, number>();
+  const { data: priceCache } = await admin
+    .from("price_cache")
+    .select("external_id, source, price_native")
+    .in("external_id", externalIds.length ? externalIds : ["__none__"]);
+  const currentPriceByKey = new Map<string, number>();
+  for (const p of priceCache ?? []) {
+    currentPriceByKey.set(`${p.external_id}|${p.source}`, Number(p.price_native));
+  }
+  const fxRatesNow =
+    currencies.length > 0
+      ? await fetchFxRates("USD", [...currencies, "USD"])
+      : null;
+
+  for (const a of assets) {
+    const qty = latestQty.get(a.id) ?? 0;
+    if (qty === 0) continue;
+    let priceNative: number | null = null;
+    if (a.price_source === "manual") priceNative = 1;
+    else if (a.external_id) {
+      priceNative = currentPriceByKey.get(`${a.external_id}|${a.price_source}`) ?? null;
+    } else if (a.asset_class === "cash") priceNative = 1;
+
+    if (priceNative == null) continue;
+    const valueNative = qty * priceNative;
+    let usd: number | null = null;
+    const cur = a.native_currency.toUpperCase();
+    if (cur === "USD") usd = valueNative;
+    else if (fxRatesNow) {
+      const r = fxRatesNow[cur];
+      if (r && r > 0) usd = valueNative / r;
+    }
+    if (usd != null) todayUsdByAsset.set(a.id, usd);
+  }
+  const totalTodayUsd = Array.from(todayUsdByAsset.values()).reduce(
+    (a, b) => a + b,
+    0,
+  );
+
+  // Iterate days, compute synthetic snapshots.
+  const synthetic: Array<{
+    user_id: string;
+    snapshot_date: string;
+    total_usd: number;
+    breakdown_usd: NetWorthBreakdownUSD;
+    coverage_pct: number;
+    is_backfilled: true;
+    computed_at: string;
+  }> = [];
+
+  // Pre-build forward-fill iterators per asset/currency: we step days
+  // monotonically and advance pointers in each series.
+  type Iter = { idx: number; series: Array<{ date: string; [k: string]: unknown }> };
+  const priceIters = new Map<string, Iter>();
+  for (const [key, series] of priceSeriesByAsset.entries()) {
+    priceIters.set(key, { idx: -1, series });
+  }
+  const fxIters = new Map<string, Iter>();
+  for (const [cur, series] of fxSeriesByCurrency.entries()) {
+    fxIters.set(cur, { idx: -1, series });
+  }
+
+  function valueAtOrBefore(it: Iter, dateIso: string): number | null {
+    while (
+      it.idx + 1 < it.series.length &&
+      it.series[it.idx + 1].date <= dateIso
+    ) {
+      it.idx += 1;
+    }
+    if (it.idx < 0) return null;
+    const row = it.series[it.idx];
+    if ("price" in row) return row.price as number;
+    if ("rate" in row) return row.rate as number;
+    return null;
+  }
+
+  for (
+    let d = new Date(startDate);
+    d <= endDate;
+    d.setUTCDate(d.getUTCDate() + 1)
+  ) {
+    const dateIso = isoDateUTC(d);
+    const breakdown: NetWorthBreakdownUSD = { ...EMPTY_BREAKDOWN };
+    let totalUsd = 0;
+    let coveredUsd = 0;
+
+    for (const a of assets) {
+      const qty = latestQty.get(a.id) ?? 0;
+      if (qty === 0) continue;
+      const todayUsd = todayUsdByAsset.get(a.id) ?? 0;
+
+      let priceNative: number | null = null;
+      if (a.price_source === "manual") {
+        // Manual-priced: hold flat at today's value (case C in plan).
+        priceNative = 1;
+      } else if (a.asset_class === "cash") {
+        priceNative = 1;
+      } else if (a.external_id) {
+        const it = priceIters.get(`${a.external_id}|${a.price_source}`);
+        if (it) priceNative = valueAtOrBefore(it, dateIso);
+      }
+      if (priceNative == null) continue;
+
+      const valueNative = qty * priceNative;
+      let usd: number | null = null;
+      const cur = a.native_currency.toUpperCase();
+      if (cur === "USD") usd = valueNative;
+      else {
+        const it = fxIters.get(cur);
+        if (it) {
+          const rate = valueAtOrBefore(it, dateIso);
+          if (rate && rate > 0) usd = valueNative / rate;
+        }
+      }
+      if (usd == null) continue;
+
+      breakdown[a.asset_class] = (breakdown[a.asset_class] ?? 0) + usd;
+      totalUsd += usd;
+      coveredUsd += todayUsd;
+    }
+
+    const coverage_pct =
+      totalTodayUsd > 0 ? Math.min(1, coveredUsd / totalTodayUsd) : 1;
+
+    synthetic.push({
+      user_id: userId,
+      snapshot_date: dateIso,
+      total_usd: round2(totalUsd),
+      breakdown_usd: {
+        equity: round2(breakdown.equity),
+        etf: round2(breakdown.etf),
+        crypto: round2(breakdown.crypto),
+        cash: round2(breakdown.cash),
+      },
+      coverage_pct: roundPct(coverage_pct),
+      is_backfilled: true,
+      computed_at: new Date().toISOString(),
+    });
+  }
+
+  // Replace existing backfilled rows for this user with the fresh compute.
+  // We never touch is_backfilled=false rows (real tracked snapshots).
+  await admin
+    .from("net_worth_snapshots")
+    .delete()
+    .eq("user_id", userId)
+    .eq("is_backfilled", true);
+
+  if (synthetic.length === 0) return;
+
+  const CHUNK = 500;
+  for (let i = 0; i < synthetic.length; i += CHUNK) {
+    const slice = synthetic.slice(i, i + CHUNK);
+    const { error } = await admin
+      .from("net_worth_snapshots")
+      .upsert(slice, {
+        onConflict: "user_id,snapshot_date",
+        ignoreDuplicates: true, // never overwrite a real (non-backfilled) row
+      });
+    if (error) {
+      console.warn("[backfill] insert failed:", error.message);
+      break;
+    }
+  }
 }
