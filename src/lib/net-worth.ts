@@ -550,11 +550,13 @@ export async function recomputeBackfillRange(userId: string): Promise<void> {
     return null;
   }
 
-  for (
-    let d = new Date(startDate);
-    d <= endDate;
-    d.setUTCDate(d.getUTCDate() + 1)
-  ) {
+  // Iterate with sparse stepping to keep the total row count small (~95 rows
+  // vs ~1825 with a naive daily loop).  Granularity per age:
+  //   > 6 months ago  →  monthly  (1st of each calendar month; serves 1y/2y/5y)
+  //   6m – 30d ago    →  bi-weekly (+14 days; serves 6m)
+  //   last 30 days    →  daily    (+1 day;   serves 7d/1m)
+  const d = new Date(startDate);
+  while (d.getTime() <= endDate.getTime()) {
     const dateIso = isoDateUTC(d);
     const breakdown: NetWorthBreakdownUSD = { ...EMPTY_BREAKDOWN };
     let totalUsd = 0;
@@ -587,6 +589,17 @@ export async function recomputeBackfillRange(userId: string): Promise<void> {
           const rate = valueAtOrBefore(it, dateIso);
           if (rate && rate > 0) usd = valueNative / rate;
         }
+        // Fallback: when historical FX data is unavailable for this date (the
+        // Frankfurter/Yahoo fetch failed or hasn't populated yet), use today's
+        // spot rate. The absolute value is approximate but the trend shape —
+        // driven by price changes — remains correct.  Without this fallback the
+        // asset is excluded from both `totalUsd` and `coveredUsd`, setting
+        // coverage_pct = 0 and hiding every chart range behind the
+        // "insufficient_coverage" gate.
+        if (usd == null && fxRatesNow) {
+          const spotRate = fxRatesNow[cur];
+          if (spotRate && spotRate > 0) usd = valueNative / spotRate;
+        }
       }
       if (usd == null) continue;
 
@@ -612,6 +625,19 @@ export async function recomputeBackfillRange(userId: string): Promise<void> {
       is_backfilled: true,
       computed_at: new Date().toISOString(),
     });
+
+    // Advance to next sample date based on how old this date is.
+    const ageDays = (today.getTime() - d.getTime()) / 86_400_000;
+    if (ageDays > 180) {
+      // Monthly: jump to 1st of next calendar month.
+      d.setUTCMonth(d.getUTCMonth() + 1, 1);
+    } else if (ageDays > 30) {
+      // Bi-weekly.
+      d.setUTCDate(d.getUTCDate() + 14);
+    } else {
+      // Daily.
+      d.setUTCDate(d.getUTCDate() + 1);
+    }
   }
 
   // Replace existing backfilled rows for this user with the fresh compute.
