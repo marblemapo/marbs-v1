@@ -550,6 +550,26 @@ export async function recomputeBackfillRange(userId: string): Promise<void> {
     return null;
   }
 
+  function priceForDateOrFallback(
+    key: string,
+    dateIso: string,
+  ): number | null {
+    const it = priceIters.get(key);
+    if (it) {
+      const value = valueAtOrBefore(it, dateIso);
+      if (value != null) return value;
+
+      // If history starts after this chart date, hold the first known price
+      // flat backward instead of excluding the asset from the whole range.
+      const first = it.series[0];
+      if (first && "price" in first) return first.price as number;
+    }
+
+    // If no history exists at all for this source, hold today's cached price
+    // flat. This keeps incomplete provider data from blanking the trend card.
+    return currentPriceByKey.get(key) ?? null;
+  }
+
   // Iterate with sparse stepping to keep the total row count small (~95 rows
   // vs ~1825 with a naive daily loop).  Granularity per age:
   //   > 6 months ago  →  monthly  (1st of each calendar month; serves 1y/2y/5y)
@@ -574,8 +594,10 @@ export async function recomputeBackfillRange(userId: string): Promise<void> {
       } else if (a.asset_class === "cash") {
         priceNative = 1;
       } else if (a.external_id) {
-        const it = priceIters.get(`${a.external_id}|${a.price_source}`);
-        if (it) priceNative = valueAtOrBefore(it, dateIso);
+        priceNative = priceForDateOrFallback(
+          `${a.external_id}|${a.price_source}`,
+          dateIso,
+        );
       }
       if (priceNative == null) continue;
 

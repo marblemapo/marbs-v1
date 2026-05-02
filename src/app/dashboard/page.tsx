@@ -117,7 +117,7 @@ export default async function DashboardPage() {
       if (isBadBackfill) {
         after(() => recomputeBackfillRange(user.id));
       } else if (hasLowCoverageBackfill) {
-        after(() => backfillUserHistory(user.id));
+        after(() => recomputeBackfillRange(user.id));
       }
     }
   }

@@ -35,15 +35,12 @@ const RANGE_DAYS: Record<TrendRange, number> = {
 
 const RANGES: TrendRange[] = ["7d", "1m", "6m", "1y", "2y", "5y"];
 
-const COVERAGE_FLOOR = 0.7;
-const RANGE_LOW_COVERAGE_LIMIT = 0.3;
-
 /**
  * Read the user's net-worth trend across all six ranges in one shot.
  * Converts stored USD values to the user's `base_currency` using
- * `fx_rate_history` (forward-filled per date). Hides ranges where >30%
- * of points have coverage_pct < 0.7 (e.g. brand new users with no
- * historical price coverage past 1y).
+ * `fx_rate_history` (forward-filled per date). Ranges remain viewable even
+ * when some snapshots have low coverage; the backfill layer carries missing
+ * prices flat so incomplete provider data does not blank the chart.
  */
 export async function getNetWorthHistory(): Promise<NetWorthHistoryResult> {
   const supabase = await createClient();
@@ -142,7 +139,9 @@ export async function getNetWorthHistory(): Promise<NetWorthHistoryResult> {
     }),
   );
 
-  // Slice each range and apply coverage rule.
+  // Slice each range. Do not blank an entire range just because some
+  // historical provider data is incomplete; partial estimates are still more
+  // useful than an empty card, and the chart copy explains the approximation.
   const today = new Date();
   today.setUTCHours(0, 0, 0, 0);
   const series = {} as Record<TrendRange, RangeStatus>;
@@ -154,12 +153,6 @@ export async function getNetWorthHistory(): Promise<NetWorthHistoryResult> {
     const slice = allPoints.filter((p) => p.date >= cutoff);
     if (slice.length === 0) {
       series[r] = { available: false, reason: "no_data" };
-      continue;
-    }
-    const lowCount = slice.filter((p) => p.coverage_pct < COVERAGE_FLOOR).length;
-    const ratio = lowCount / slice.length;
-    if (ratio > RANGE_LOW_COVERAGE_LIMIT) {
-      series[r] = { available: false, reason: "insufficient_coverage" };
       continue;
     }
     series[r] = {

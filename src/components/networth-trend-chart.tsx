@@ -305,6 +305,11 @@ export function NetWorthTrendChart({
             at historical market rates. Real past values may differ if your
             holdings changed.
           </p>
+          <p className="text-text-muted">
+            When a holding is missing history for part of a range, the estimate
+            carries the nearest available price, or today&apos;s cached price if no
+            history exists yet.
+          </p>
           {hasManualPricedAssets && (
             <p className="text-text-muted">
               Manually-priced assets are held flat in estimates.
