@@ -9,13 +9,35 @@ import { NetWorthTrendChart } from "./networth-trend-chart";
 export async function NetWorthTrendCard() {
   const data = await getNetWorthHistory();
 
-  // Hide the card entirely if there's no data at all (empty portfolio,
-  // pre-backfill). The card has no value yet — the hero already shows the
-  // empty state.
+  // No portfolio at all — hero already shows the empty state; skip the card.
+  if (data.no_assets) return null;
+
   const hasAny = Object.values(data.series).some(
     (s) => s.available && s.points.length > 0,
   );
-  if (!hasAny) return null;
+
+  // Backfill hasn't produced rows yet (first load, or still in progress).
+  // Show a quiet placeholder so the user knows the feature exists.
+  if (!hasAny) {
+    return (
+      <section className="flex flex-col gap-4 p-7 rounded-2xl bg-[#0A0A0A] border border-white/[0.08]">
+        <div className="flex items-center gap-2">
+          <span className="font-plex text-[11px] text-text-muted uppercase tracking-[0.18em] font-medium">
+            Trend
+          </span>
+        </div>
+        <div className="h-[200px] flex flex-col items-center justify-center gap-2">
+          <div className="w-5 h-5 rounded-full border-2 border-[#7FFFD4]/40 border-t-[#7FFFD4] animate-spin" />
+          <p className="font-plex text-[12px] text-text-muted text-center">
+            Calculating your net worth history…
+          </p>
+          <p className="font-plex text-[11px] text-text-muted/60 text-center">
+            Refresh in a moment once the first load completes.
+          </p>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <NetWorthTrendChart
