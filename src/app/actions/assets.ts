@@ -12,6 +12,11 @@ import {
 } from "@/lib/prices";
 import { resolveCoinGeckoSlug } from "@/lib/crypto-slugs";
 import { etfLogoUrl } from "@/lib/etf-logos";
+import {
+  upsertTodaySnapshot,
+  backfillUserHistory,
+  recomputeBackfillRange,
+} from "@/lib/net-worth";
 
 type AssetClass = "equity" | "etf" | "crypto" | "cash";
 type PriceSource = "yahoo" | "coingecko" | "finnhub" | "manual";
@@ -63,6 +68,10 @@ export async function updateAssetQuantity(
 
   if (error) return { ok: false, error: error.message };
 
+  after(async () => {
+    await upsertTodaySnapshot(user.id);
+    await recomputeBackfillRange(user.id);
+  });
   revalidatePath("/dashboard");
   return { ok: true };
 }
@@ -139,6 +148,10 @@ export async function deleteAsset(assetId: string): Promise<MutateResult> {
   const { error } = await supabase.from("assets").delete().eq("id", assetId);
   if (error) return { ok: false, error: error.message };
 
+  after(async () => {
+    await upsertTodaySnapshot(user.id);
+    await recomputeBackfillRange(user.id);
+  });
   revalidatePath("/dashboard");
   return { ok: true };
 }
@@ -382,6 +395,13 @@ export async function addAsset(
     });
   }
 
+  // New asset: fetch its price/FX history and recompute the backfilled range.
+  // backfillUserHistory is gated (skips if data is < 36h old) so re-running
+  // it is cheap when only an existing asset's quantity changed elsewhere.
+  after(async () => {
+    await upsertTodaySnapshot(user.id);
+    await backfillUserHistory(user.id);
+  });
   revalidatePath("/dashboard");
   return { ok: true, assetId };
 }

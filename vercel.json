@@ -1,0 +1,5 @@
+{
+  "crons": [
+    { "path": "/api/cron/snapshot-net-worth", "schedule": "10 0 * * *" }
+  ]
+}
