@@ -587,6 +587,17 @@ export async function recomputeBackfillRange(userId: string): Promise<void> {
           const rate = valueAtOrBefore(it, dateIso);
           if (rate && rate > 0) usd = valueNative / rate;
         }
+        // Fallback: when historical FX data is unavailable for this date (the
+        // Frankfurter/Yahoo fetch failed or hasn't populated yet), use today's
+        // spot rate. The absolute value is approximate but the trend shape —
+        // driven by price changes — remains correct.  Without this fallback the
+        // asset is excluded from both `totalUsd` and `coveredUsd`, setting
+        // coverage_pct = 0 and hiding every chart range behind the
+        // "insufficient_coverage" gate.
+        if (usd == null && fxRatesNow) {
+          const spotRate = fxRatesNow[cur];
+          if (spotRate && spotRate > 0) usd = valueNative / spotRate;
+        }
       }
       if (usd == null) continue;
 

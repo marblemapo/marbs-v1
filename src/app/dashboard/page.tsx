@@ -18,7 +18,7 @@ import { DangerZone } from "@/components/danger-zone";
 import { CurrencyProvider } from "@/components/currency-context";
 import { fetchFxRates, convertFx } from "@/lib/fx";
 import { fetchPrice } from "@/lib/prices";
-import { backfillUserHistory } from "@/lib/net-worth";
+import { backfillUserHistory, recomputeBackfillRange } from "@/lib/net-worth";
 
 const PRICE_TTL_MS = 10 * 60 * 1000;
 
@@ -74,10 +74,19 @@ export default async function DashboardPage() {
     });
   }
 
-  // Trigger history backfill when needed. Fires on first load (no rows at
-  // all) and also re-fires after a partial timeout (fewer than 30 rows means
-  // the backfill didn't reach the short ranges like 7d/1m). Idempotent: the
-  // orchestrator's 36h cache gate makes re-runs near-free.
+  // Trigger history backfill when needed.
+  //
+  //  • < 30 rows  → first load or partial-timeout run. Run the full backfill
+  //                 (Phase 1 = fetch price/FX history; Phase 2 = compute).
+  //
+  //  • ≥ 30 rows but all-zero values → "bad" backfill caused by an earlier
+  //    run where FX/price fetches failed (rows were inserted with total_usd=0
+  //    and coverage_pct=0, which hides every range).  Re-run only Phase 2
+  //    (recomputeBackfillRange) — price/FX is already in the DB from the
+  //    first run, and the spot-rate FX fallback in that function ensures we
+  //    get non-zero values even if historical FX rows are sparse.
+  //
+  //  • ≥ 30 rows with real values → nothing to do.
   if ((assets ?? []).length > 0) {
     const { count: backfilledCount } = await supabase
       .from("net_worth_snapshots")
@@ -86,6 +95,23 @@ export default async function DashboardPage() {
       .eq("is_backfilled", true);
     if ((backfilledCount ?? 0) < 30) {
       after(() => backfillUserHistory(user.id));
+    } else {
+      // Sample the most-recent backfilled rows to detect a bad (all-zero) run.
+      const { data: recentSnaps } = await supabase
+        .from("net_worth_snapshots")
+        .select("total_usd, coverage_pct")
+        .eq("user_id", user.id)
+        .eq("is_backfilled", true)
+        .order("snapshot_date", { ascending: false })
+        .limit(10);
+      const isBadBackfill =
+        (recentSnaps ?? []).length >= 5 &&
+        (recentSnaps ?? []).every(
+          (s) => Number(s.total_usd) <= 0 || Number(s.coverage_pct) <= 0,
+        );
+      if (isBadBackfill) {
+        after(() => recomputeBackfillRange(user.id));
+      }
     }
   }
 
