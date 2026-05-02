@@ -100,6 +100,10 @@ export function NetWorthTrendChart({
     () => (status.available ? status.points : []),
     [status],
   );
+  const emptyMessage =
+    !status.available && status.reason === "insufficient_coverage"
+      ? "Not enough price history for this range yet."
+      : "No data for this range yet.";
 
   // Domain: only data within the selected range. Recharts handles auto Y.
   const yDomain = useMemo<[number | "auto", number | "auto"]>(() => {
@@ -165,7 +169,7 @@ export function NetWorthTrendChart({
       <div className="h-[200px] -mx-2">
         {points.length === 0 ? (
           <div className="h-full flex items-center justify-center font-plex text-[12px] text-text-muted">
-            No data for this range yet.
+            {emptyMessage}
           </div>
         ) : (
           <ResponsiveContainer width="100%" height="100%">

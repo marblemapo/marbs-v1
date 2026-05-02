@@ -80,11 +80,13 @@ export default async function DashboardPage() {
   //                 (Phase 1 = fetch price/FX history; Phase 2 = compute).
   //
   //  • ≥ 30 rows but all-zero values → "bad" backfill caused by an earlier
-  //    run where FX/price fetches failed (rows were inserted with total_usd=0
-  //    and coverage_pct=0, which hides every range).  Re-run only Phase 2
-  //    (recomputeBackfillRange) — price/FX is already in the DB from the
-  //    first run, and the spot-rate FX fallback in that function ensures we
-  //    get non-zero values even if historical FX rows are sparse.
+  //    run where FX failed. Re-run only Phase 2 (recomputeBackfillRange);
+  //    the spot-rate FX fallback now prevents those zero-coverage rows.
+  //
+  //  • ≥ 30 rows but recent rows still have low coverage → Phase 1 likely
+  //    never cached history for some assets (for example finnhub-priced
+  //    equities that should have been fetched through Yahoo). Run the full
+  //    backfill so missing price_history rows get populated before recompute.
   //
   //  • ≥ 30 rows with real values → nothing to do.
   if ((assets ?? []).length > 0) {
@@ -109,8 +111,13 @@ export default async function DashboardPage() {
         (recentSnaps ?? []).every(
           (s) => Number(s.total_usd) <= 0 || Number(s.coverage_pct) <= 0,
         );
+      const hasLowCoverageBackfill =
+        (recentSnaps ?? []).length >= 5 &&
+        (recentSnaps ?? []).every((s) => Number(s.coverage_pct) < 0.7);
       if (isBadBackfill) {
         after(() => recomputeBackfillRange(user.id));
+      } else if (hasLowCoverageBackfill) {
+        after(() => backfillUserHistory(user.id));
       }
     }
   }

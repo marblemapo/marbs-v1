@@ -20,7 +20,10 @@ export async function NetWorthTrendCard() {
   // Backfill hasn't produced rows yet (first load, or still in progress).
   // Show a client-side auto-refreshing spinner so the chart just appears
   // without the user having to manually reload.
-  if (!hasAny) return <NetWorthTrendCalculating />;
+  const hasOnlyNoData = Object.values(data.series).every(
+    (s) => !s.available && s.reason === "no_data",
+  );
+  if (!hasAny && hasOnlyNoData) return <NetWorthTrendCalculating />;
 
   return (
     <NetWorthTrendChart
