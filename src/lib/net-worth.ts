@@ -589,10 +589,15 @@ export async function recomputeBackfillRange(userId: string): Promise<void> {
 
   if (synthetic.length === 0) return;
 
+  // Insert NEWEST rows first. If a timeout kills us mid-insert, the user
+  // still sees the most-recent chart ranges (7d, 1m, …) rather than only
+  // ancient history from 5 years ago.
+  const ordered = [...synthetic].reverse();
+
   const CHUNK = 500;
   let totalInserted = 0;
-  for (let i = 0; i < synthetic.length; i += CHUNK) {
-    const slice = synthetic.slice(i, i + CHUNK);
+  for (let i = 0; i < ordered.length; i += CHUNK) {
+    const slice = ordered.slice(i, i + CHUNK);
     const { error, count } = await admin
       .from("net_worth_snapshots")
       .upsert(slice, {
@@ -602,7 +607,7 @@ export async function recomputeBackfillRange(userId: string): Promise<void> {
       });
     if (error) {
       console.error(
-        `[backfill] insert failed at chunk ${i}/${synthetic.length} for ${userId}:`,
+        `[backfill] insert failed at chunk ${i}/${ordered.length} for ${userId}:`,
         error.message,
       );
       throw new Error(error.message);
@@ -610,6 +615,6 @@ export async function recomputeBackfillRange(userId: string): Promise<void> {
     totalInserted += count ?? slice.length;
   }
   console.log(
-    `[backfill] inserted ${totalInserted}/${synthetic.length} backfilled rows for ${userId}`,
+    `[backfill] inserted ${totalInserted}/${ordered.length} backfilled rows for ${userId}`,
   );
 }

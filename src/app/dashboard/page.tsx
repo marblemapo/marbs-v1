@@ -74,17 +74,17 @@ export default async function DashboardPage() {
     });
   }
 
-  // Trigger one-shot history backfill for users who have assets but no
-  // backfilled rows yet (newly onboarded, or pre-existing users on first
-  // dashboard load after this feature ships). Idempotent: the orchestrator
-  // skips already-cached price/FX history within 36h.
+  // Trigger history backfill when needed. Fires on first load (no rows at
+  // all) and also re-fires after a partial timeout (fewer than 30 rows means
+  // the backfill didn't reach the short ranges like 7d/1m). Idempotent: the
+  // orchestrator's 36h cache gate makes re-runs near-free.
   if ((assets ?? []).length > 0) {
     const { count: backfilledCount } = await supabase
       .from("net_worth_snapshots")
       .select("*", { count: "exact", head: true })
       .eq("user_id", user.id)
       .eq("is_backfilled", true);
-    if ((backfilledCount ?? 0) === 0) {
+    if ((backfilledCount ?? 0) < 30) {
       after(() => backfillUserHistory(user.id));
     }
   }

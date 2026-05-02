@@ -20,6 +20,8 @@ export type NetWorthHistoryResult = {
   onboarding_date: string | null;
   has_manual_priced_assets: boolean;
   series: Record<TrendRange, RangeStatus>;
+  /** True when the user has no assets at all — card should be hidden entirely. */
+  no_assets: boolean;
 };
 
 const RANGE_DAYS: Record<TrendRange, number> = {
@@ -49,7 +51,7 @@ export async function getNetWorthHistory(): Promise<NetWorthHistoryResult> {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) {
-    return emptyResult("USD");
+    return emptyResult("USD", true);
   }
 
   const { data: profile } = await supabase
@@ -59,15 +61,20 @@ export async function getNetWorthHistory(): Promise<NetWorthHistoryResult> {
     .single();
   const baseCurrency = (profile?.base_currency ?? "USD").toUpperCase();
 
-  // Detect whether the user has any manual-priced assets (drives the
-  // "manually-priced assets held flat" footnote in the popover).
-  const { data: manualAssetRows } = await supabase
+  // Detect whether the user has any assets and any manual-priced assets.
+  const { data: allAssetRows } = await supabase
     .from("assets")
-    .select("id")
-    .eq("user_id", user.id)
-    .eq("price_source", "manual")
-    .limit(1);
-  const has_manual_priced_assets = (manualAssetRows ?? []).length > 0;
+    .select("id, price_source")
+    .eq("user_id", user.id);
+  const hasAssets = (allAssetRows ?? []).length > 0;
+  const has_manual_priced_assets = (allAssetRows ?? []).some(
+    (a) => a.price_source === "manual",
+  );
+
+  if (!hasAssets) {
+    // No portfolio — hero shows the empty state; hide the chart.
+    return emptyResult(baseCurrency, true);
+  }
 
   // Pull the last 5y of snapshots in one go. Even with daily granularity,
   // this is ~1825 rows max — small.
@@ -82,7 +89,8 @@ export async function getNetWorthHistory(): Promise<NetWorthHistoryResult> {
     .order("snapshot_date", { ascending: true });
 
   if (!snaps || snaps.length === 0) {
-    return emptyResult(baseCurrency);
+    // Assets exist but no snapshot rows yet — backfill is in progress.
+    return emptyResult(baseCurrency, false);
   }
 
   // Earliest non-backfilled snapshot = "joined" marker.
@@ -169,10 +177,14 @@ export async function getNetWorthHistory(): Promise<NetWorthHistoryResult> {
     onboarding_date,
     has_manual_priced_assets,
     series,
+    no_assets: false,
   };
 }
 
-function emptyResult(baseCurrency: string): NetWorthHistoryResult {
+function emptyResult(
+  baseCurrency: string,
+  no_assets: boolean,
+): NetWorthHistoryResult {
   const series = {} as Record<TrendRange, RangeStatus>;
   for (const r of RANGES) {
     series[r] = { available: false, reason: "no_data" };
@@ -182,6 +194,7 @@ function emptyResult(baseCurrency: string): NetWorthHistoryResult {
     onboarding_date: null,
     has_manual_priced_assets: false,
     series,
+    no_assets,
   };
 }
 
