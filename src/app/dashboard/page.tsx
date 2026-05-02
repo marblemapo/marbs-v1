@@ -23,6 +23,10 @@ import { backfillUserHistory } from "@/lib/net-worth";
 const PRICE_TTL_MS = 10 * 60 * 1000;
 
 export const dynamic = "force-dynamic";
+// Extend the function lifetime so the post-response after() callbacks
+// (logo backfill + net-worth history backfill) finish on Vercel Hobby,
+// where the default is 10s. Hobby caps at 60s.
+export const maxDuration = 60;
 
 export default async function DashboardPage() {
   const supabase = await createClient();
