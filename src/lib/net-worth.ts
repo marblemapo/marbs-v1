@@ -317,7 +317,49 @@ export async function backfillUserHistory(userId: string): Promise<void> {
     }),
   );
 
-  await Promise.all([...priceFetches, ...fxFetches]);
+  const phaseOneResults = await Promise.all([...priceFetches, ...fxFetches]);
+
+  // Guard: if the portfolio contains priced assets but Phase 1 produced zero
+  // rows (external APIs all failed / timed out / blocked), skip Phase 2.
+  // Without this guard, Phase 2 would insert ~1825 rows with total_usd=0 and
+  // coverage_pct=0, which (a) pollutes the DB and (b) pushes backfilledCount
+  // above the retry threshold so the next dashboard load never re-triggers.
+  const hasPricedAssets = assets.some(
+    (a) =>
+      a.external_id &&
+      a.price_source !== "manual" &&
+      a.asset_class !== "cash",
+  );
+  if (hasPricedAssets) {
+    const priceRowsInserted = phaseOneResults
+      .slice(0, priceFetches.length)
+      .reduce((sum, r) => sum + r.inserted, 0);
+    // If inserted === 0 for all assets, check whether price_history already
+    // has data (could be a cache-hit run, not necessarily a failure).
+    if (priceRowsInserted === 0) {
+      const sampleAsset = assets.find(
+        (a) =>
+          a.external_id &&
+          a.price_source !== "manual" &&
+          a.asset_class !== "cash",
+      )!;
+      const { count } = await admin
+        .from("price_history")
+        .select("*", { count: "exact", head: true })
+        .eq("external_id", sampleAsset.external_id!)
+        .eq("source", sampleAsset.price_source)
+        .limit(1);
+      if ((count ?? 0) === 0) {
+        // External fetch genuinely failed — no price data available.
+        // Skip Phase 2 so net_worth_snapshots stays empty and the dashboard
+        // trigger will retry on the next load.
+        console.warn(
+          `[backfill] Phase 1 produced no price data for ${userId}; skipping Phase 2`,
+        );
+        return;
+      }
+    }
+  }
 
   // Phase 2: compute synthetic snapshots from local data.
   await recomputeBackfillRange(userId);
