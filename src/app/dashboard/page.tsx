@@ -85,8 +85,8 @@ export default async function DashboardPage() {
   //
   //  • ≥ 30 rows but recent rows still have low coverage → Phase 1 likely
   //    never cached history for some assets (for example finnhub-priced
-  //    equities that should have been fetched through Yahoo). Run the full
-  //    backfill so missing price_history rows get populated before recompute.
+  //    equities). Re-run Phase 2; incomplete price history is now carried flat
+  //    from nearest/current prices instead of blanking the trend.
   //
   //  • ≥ 30 rows with real values → nothing to do.
   if ((assets ?? []).length > 0) {
