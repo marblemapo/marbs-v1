@@ -403,8 +403,8 @@ export async function recomputeBackfillRange(userId: string): Promise<void> {
     if (!latestQty.has(s.asset_id)) latestQty.set(s.asset_id, Number(s.quantity));
   }
 
-  // Determine the onboarding cutoff — the earliest snapshot_at across all
-  // assets. The synthetic range spans (today - 5y) up to (cutoff - 1).
+  // Determine whether the user has any quantity snapshots. Synthetic rows span
+  // (today - 5y) through yesterday; real tracked rows are preserved on conflict.
   let onboardingDate: Date | null = null;
   for (const s of snaps ?? []) {
     const d = new Date(s.snapshot_at);
@@ -415,12 +415,11 @@ export async function recomputeBackfillRange(userId: string): Promise<void> {
   const today = new Date();
   today.setUTCHours(0, 0, 0, 0);
   const startDate = new Date(today.getTime() - BACKFILL_DAYS * 86_400_000);
-  const endDate = new Date(onboardingDate);
-  endDate.setUTCHours(0, 0, 0, 0);
+  const endDate = new Date(today);
   endDate.setUTCDate(endDate.getUTCDate() - 1);
 
   if (endDate.getTime() < startDate.getTime()) {
-    // User onboarded ≥ 5y ago — nothing to backfill before their data.
+    // Nothing to backfill.
     await admin
       .from("net_worth_snapshots")
       .delete()

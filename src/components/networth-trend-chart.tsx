@@ -18,6 +18,7 @@ import type {
 
 const RANGES: { key: TrendRange; label: string }[] = [
   { key: "7d", label: "7D" },
+  { key: "2w", label: "2W" },
   { key: "1m", label: "1M" },
   { key: "6m", label: "6M" },
   { key: "1y", label: "1Y" },
@@ -62,7 +63,7 @@ function formatXTick(dateIso: string, range: TrendRange): string {
   if (range === "7d") {
     return d.toLocaleDateString("en-US", { weekday: "short", timeZone: "UTC" });
   }
-  if (range === "1m") {
+  if (range === "2w" || range === "1m") {
     return d.toLocaleDateString("en-US", {
       month: "short",
       day: "numeric",
@@ -81,10 +82,9 @@ export function NetWorthTrendChart({
   onboardingDate,
   hasManualPricedAssets,
 }: Props) {
-  // Pick a sensible initial range — first available, preferring 1y as the
-  // default. Falls back to whatever's first if 1y isn't available.
+  // Pick a sensible initial range — first available, preferring recent ranges.
   const defaultRange: TrendRange = useMemo(() => {
-    const preferred: TrendRange[] = ["1y", "6m", "1m", "7d", "2y", "5y"];
+    const preferred: TrendRange[] = ["1m", "2w", "7d", "6m", "1y", "2y", "5y"];
     for (const r of preferred) {
       if (series[r].available) return r;
     }
@@ -121,7 +121,7 @@ export function NetWorthTrendChart({
 
   // Tick selection — let recharts pick X ticks but cap the count so labels
   // don't overlap.
-  const xTickCount = range === "7d" ? 7 : range === "1m" ? 6 : 6;
+  const xTickCount = range === "7d" ? 7 : range === "2w" ? 7 : range === "1m" ? 6 : 6;
 
   return (
     <section className="relative flex flex-col gap-4 p-7 rounded-2xl bg-[#0A0A0A] border border-white/[0.08]">

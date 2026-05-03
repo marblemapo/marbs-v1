@@ -90,12 +90,39 @@ export default async function DashboardPage() {
   //
   //  • ≥ 30 rows with real values → nothing to do.
   if ((assets ?? []).length > 0) {
+    const pricedAssets = (assets ?? []).filter(
+      (a) =>
+        a.external_id &&
+        a.price_source !== "manual" &&
+        a.asset_class !== "cash",
+    );
+    const historyChecks = await Promise.all(
+      pricedAssets.map(async (a) => {
+        const { count } = await supabase
+          .from("price_history")
+          .select("*", { count: "exact", head: true })
+          .eq("external_id", a.external_id!)
+          .eq("source", a.price_source);
+
+        const symbol = (a.symbol ?? "").toUpperCase();
+        const needsMajorCryptoRetry =
+          a.asset_class === "crypto" &&
+          ["BTC", "BTC-USD", "BNB", "BNB-USD", "ETH", "ETH-USD"].includes(
+            symbol,
+          ) &&
+          (count ?? 0) < 1000;
+
+        return (count ?? 0) === 0 || needsMajorCryptoRetry;
+      }),
+    );
+    const hasSparsePriceHistory = historyChecks.some(Boolean);
+
     const { count: backfilledCount } = await supabase
       .from("net_worth_snapshots")
       .select("*", { count: "exact", head: true })
       .eq("user_id", user.id)
       .eq("is_backfilled", true);
-    if ((backfilledCount ?? 0) < 30) {
+    if ((backfilledCount ?? 0) < 30 || hasSparsePriceHistory) {
       after(() => backfillUserHistory(user.id));
     } else {
       // Sample the most-recent backfilled rows to detect a bad (all-zero) run.
@@ -164,6 +191,7 @@ export default async function DashboardPage() {
     }
   }
 
+  // eslint-disable-next-line react-hooks/purity -- server-side cache TTL check
   const now = Date.now();
   const toRefresh = (assets ?? []).filter((a) => {
     if (!a.external_id || a.price_source === "manual") return false;

@@ -146,9 +146,9 @@ export async function backfillPriceHistoryForAsset(
     return { inserted: 0, oldestDate: null };
   }
 
-  // Skip if we already have a recent fetch (within the last 24h). Backfill
-  // is idempotent and called from many paths — this gate keeps it cheap to
-  // re-trigger on every asset mutation without hammering the external APIs.
+  // Skip only when the cached series is both recent and deep enough. A bad
+  // partial run can leave a fresh latest row but only ~365 days of history;
+  // those must still be retried so 2y/5y ranges get real prices.
   const { data: latest } = await admin
     .from("price_history")
     .select("observation_date")
@@ -157,10 +157,22 @@ export async function backfillPriceHistoryForAsset(
     .order("observation_date", { ascending: false })
     .limit(1)
     .maybeSingle();
+  const { data: oldest } = await admin
+    .from("price_history")
+    .select("observation_date")
+    .eq("external_id", asset.external_id)
+    .eq("source", asset.source)
+    .order("observation_date", { ascending: true })
+    .limit(1)
+    .maybeSingle();
   if (latest?.observation_date) {
     const last = new Date(latest.observation_date);
     const ageMs = Date.now() - last.getTime();
-    if (ageMs < 36 * 60 * 60 * 1000) {
+    const first = oldest?.observation_date
+      ? new Date(oldest.observation_date)
+      : null;
+    const targetOldest = new Date(Date.now() - 1700 * 86_400_000);
+    if (ageMs < 36 * 60 * 60 * 1000 && first && first <= targetOldest) {
       return { inserted: 0, oldestDate: null };
     }
   }
@@ -172,7 +184,12 @@ export async function backfillPriceHistoryForAsset(
     // For crypto, Yahoo uses `${symbol}-USD`. The symbol column on
     // assets is the ticker (e.g. "BTC", "ETH"); external_id is the
     // CoinGecko slug ("bitcoin"). We need the symbol here.
-    const ticker = asset.symbol ? `${asset.symbol.toUpperCase()}-USD` : null;
+    const symbol = asset.symbol?.toUpperCase();
+    const ticker = symbol
+      ? symbol.endsWith("-USD")
+        ? symbol
+        : `${symbol}-USD`
+      : null;
     if (ticker) points = await fetchYahooHistory(ticker);
   } else {
     points = await fetchYahooHistory(asset.external_id);

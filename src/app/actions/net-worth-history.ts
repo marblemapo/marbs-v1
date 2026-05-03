@@ -2,7 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 
-export type TrendRange = "7d" | "1m" | "6m" | "1y" | "2y" | "5y";
+export type TrendRange = "7d" | "2w" | "1m" | "6m" | "1y" | "2y" | "5y";
 
 export type TrendPoint = {
   date: string;
@@ -26,6 +26,7 @@ export type NetWorthHistoryResult = {
 
 const RANGE_DAYS: Record<TrendRange, number> = {
   "7d": 7,
+  "2w": 14,
   "1m": 30,
   "6m": 180,
   "1y": 365,
@@ -33,7 +34,7 @@ const RANGE_DAYS: Record<TrendRange, number> = {
   "5y": 1825,
 };
 
-const RANGES: TrendRange[] = ["7d", "1m", "6m", "1y", "2y", "5y"];
+const RANGES: TrendRange[] = ["7d", "2w", "1m", "6m", "1y", "2y", "5y"];
 
 /**
  * Read the user's net-worth trend across all six ranges in one shot.
