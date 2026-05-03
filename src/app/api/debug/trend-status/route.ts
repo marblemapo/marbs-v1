@@ -23,9 +23,12 @@ export async function GET() {
   // 1. snapshot counts + coverage sample
   const { data: snaps, count: snapCount } = await supabase
     .from("net_worth_snapshots")
-    .select("snapshot_date, total_usd, is_backfilled, coverage_pct", {
-      count: "exact",
-    })
+    .select(
+      "snapshot_date, total_usd, is_backfilled, coverage_pct, breakdown_usd",
+      {
+        count: "exact",
+      },
+    )
     .eq("user_id", user.id)
     .order("snapshot_date", { ascending: false })
     .limit(5);
@@ -50,7 +53,10 @@ export async function GET() {
     .select("id, symbol, external_id, asset_class, price_source, native_currency")
     .eq("user_id", user.id);
 
-  const priceHistoryCounts: Record<string, number> = {};
+  const priceHistory: Record<
+    string,
+    { count: number; first_date: string | null; last_date: string | null }
+  > = {};
   for (const a of assets ?? []) {
     if (!a.external_id || a.price_source === "manual") continue;
     const { count } = await admin
@@ -58,8 +64,27 @@ export async function GET() {
       .select("*", { count: "exact", head: true })
       .eq("external_id", a.external_id)
       .eq("source", a.price_source);
-    priceHistoryCounts[`${a.symbol ?? a.external_id} (${a.price_source})`] =
-      count ?? 0;
+    const { data: first } = await admin
+      .from("price_history")
+      .select("observation_date")
+      .eq("external_id", a.external_id)
+      .eq("source", a.price_source)
+      .order("observation_date", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    const { data: last } = await admin
+      .from("price_history")
+      .select("observation_date")
+      .eq("external_id", a.external_id)
+      .eq("source", a.price_source)
+      .order("observation_date", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    priceHistory[`${a.symbol ?? a.external_id} (${a.price_source})`] = {
+      count: count ?? 0,
+      first_date: first?.observation_date ?? null,
+      last_date: last?.observation_date ?? null,
+    };
   }
 
   // 4. FX history counts per currency
@@ -98,7 +123,7 @@ export async function GET() {
       price_source: a.price_source,
       native_currency: a.native_currency,
     })),
-    price_history_counts: priceHistoryCounts,
+    price_history: priceHistory,
     fx_history_counts: fxHistoryCounts,
     balance_snapshot_count: balanceSnapCount ?? 0,
   });

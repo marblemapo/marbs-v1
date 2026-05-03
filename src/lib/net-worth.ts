@@ -20,12 +20,37 @@ export type AssetClassKey = "equity" | "etf" | "crypto" | "cash";
 
 export type NetWorthBreakdownUSD = Record<AssetClassKey, number>;
 
+export type SnapshotValuationQuality =
+  | "tracked"
+  | "historical"
+  | "partially_estimated"
+  | "mostly_estimated"
+  | "low_coverage";
+
+export type SnapshotQualityMeta = {
+  valuation_quality: SnapshotValuationQuality;
+  /** Share of today's known portfolio value priced by fallback data. */
+  estimated_pct: number;
+  /** Share of today's known portfolio value missing from this snapshot. */
+  missing_price_pct: number;
+  /** Share of today's known portfolio value priced by real history. */
+  historical_price_pct: number;
+};
+
+export type NetWorthBreakdownWithMeta = NetWorthBreakdownUSD & {
+  _meta?: SnapshotQualityMeta;
+};
+
 export type CurrentNetWorthSnapshot = {
   total_usd: number;
-  breakdown_usd: NetWorthBreakdownUSD;
+  breakdown_usd: NetWorthBreakdownWithMeta;
   /** Fraction of asset positions that resolved to a USD value. 1 = all priced. */
   coverage_pct: number;
 };
+
+const MAX_PRICE_STALENESS_DAYS = 10;
+const CURRENT_PRICE_FALLBACK_DAYS = 35;
+const MAX_FX_STALENESS_DAYS = 14;
 
 const EMPTY_BREAKDOWN: NetWorthBreakdownUSD = {
   equity: 0,
@@ -52,7 +77,16 @@ export async function computeCurrentNetWorthUSD(
     .eq("user_id", userId);
 
   if (!assets || assets.length === 0) {
-    return { total_usd: 0, breakdown_usd: { ...EMPTY_BREAKDOWN }, coverage_pct: 1 };
+    return {
+      total_usd: 0,
+      breakdown_usd: withQualityMeta({ ...EMPTY_BREAKDOWN }, {
+        valuation_quality: "tracked",
+        estimated_pct: 0,
+        missing_price_pct: 0,
+        historical_price_pct: 1,
+      }),
+      coverage_pct: 1,
+    };
   }
 
   const assetIds = assets.map((a) => a.id);
@@ -130,15 +164,21 @@ export async function computeCurrentNetWorthUSD(
   }
 
   const coverage_pct = totalPositions === 0 ? 1 : pricedPositions / totalPositions;
+  const missingPct = 1 - coverage_pct;
+  const meta: SnapshotQualityMeta = {
+    valuation_quality: qualityFromFractions({
+      estimatedPct: 0,
+      missingPct,
+      tracked: true,
+    }),
+    estimated_pct: 0,
+    missing_price_pct: roundPct(missingPct),
+    historical_price_pct: roundPct(coverage_pct),
+  };
 
   return {
     total_usd: round2(total),
-    breakdown_usd: {
-      equity: round2(breakdown.equity),
-      etf: round2(breakdown.etf),
-      crypto: round2(breakdown.crypto),
-      cash: round2(breakdown.cash),
-    },
+    breakdown_usd: withQualityMeta(breakdown, meta),
     coverage_pct: roundPct(coverage_pct),
   };
 }
@@ -149,6 +189,43 @@ function round2(n: number): number {
 
 function roundPct(n: number): number {
   return Math.round(n * 10000) / 10000;
+}
+
+function qualityFromFractions({
+  estimatedPct,
+  missingPct,
+  tracked,
+}: {
+  estimatedPct: number;
+  missingPct: number;
+  tracked?: boolean;
+}): SnapshotValuationQuality {
+  if (tracked && missingPct < 0.01 && estimatedPct < 0.01) return "tracked";
+  if (missingPct > 0.3) return "low_coverage";
+  if (estimatedPct > 0.3) return "mostly_estimated";
+  if (estimatedPct > 0.05 || missingPct > 0.05) {
+    return "partially_estimated";
+  }
+  return tracked ? "tracked" : "historical";
+}
+
+function withQualityMeta(
+  breakdown: NetWorthBreakdownUSD,
+  meta: SnapshotQualityMeta,
+): NetWorthBreakdownWithMeta {
+  return {
+    equity: round2(breakdown.equity),
+    etf: round2(breakdown.etf),
+    crypto: round2(breakdown.crypto),
+    cash: round2(breakdown.cash),
+    _meta: meta,
+  };
+}
+
+function daysBetweenIso(fromIso: string, toIso: string): number {
+  const from = new Date(`${fromIso}T00:00:00Z`).getTime();
+  const to = new Date(`${toIso}T00:00:00Z`).getTime();
+  return Math.floor((to - from) / 86_400_000);
 }
 
 /**
@@ -517,7 +594,7 @@ export async function recomputeBackfillRange(userId: string): Promise<void> {
     user_id: string;
     snapshot_date: string;
     total_usd: number;
-    breakdown_usd: NetWorthBreakdownUSD;
+    breakdown_usd: NetWorthBreakdownWithMeta;
     coverage_pct: number;
     is_backfilled: true;
     computed_at: string;
@@ -535,7 +612,10 @@ export async function recomputeBackfillRange(userId: string): Promise<void> {
     fxIters.set(cur, { idx: -1, series });
   }
 
-  function valueAtOrBefore(it: Iter, dateIso: string): number | null {
+  function valueAtOrBefore(
+    it: Iter,
+    dateIso: string,
+  ): { value: number; date: string } | null {
     while (
       it.idx + 1 < it.series.length &&
       it.series[it.idx + 1].date <= dateIso
@@ -544,29 +624,39 @@ export async function recomputeBackfillRange(userId: string): Promise<void> {
     }
     if (it.idx < 0) return null;
     const row = it.series[it.idx];
-    if ("price" in row) return row.price as number;
-    if ("rate" in row) return row.rate as number;
+    if ("price" in row) return { value: row.price as number, date: row.date };
+    if ("rate" in row) return { value: row.rate as number, date: row.date };
     return null;
   }
+
+  type PriceLookup =
+    | { price: number; quality: "historical" | "estimated" }
+    | { price: null; quality: "missing" };
 
   function priceForDateOrFallback(
     key: string,
     dateIso: string,
-  ): number | null {
+  ): PriceLookup {
     const it = priceIters.get(key);
     if (it) {
-      const value = valueAtOrBefore(it, dateIso);
-      if (value != null) return value;
-
-      // If history starts after this chart date, hold the first known price
-      // flat backward instead of excluding the asset from the whole range.
-      const first = it.series[0];
-      if (first && "price" in first) return first.price as number;
+      const found = valueAtOrBefore(it, dateIso);
+      if (
+        found &&
+        daysBetweenIso(found.date, dateIso) <= MAX_PRICE_STALENESS_DAYS
+      ) {
+        return { price: found.value, quality: "historical" };
+      }
     }
 
-    // If no history exists at all for this source, hold today's cached price
-    // flat. This keeps incomplete provider data from blanking the trend card.
-    return currentPriceByKey.get(key) ?? null;
+    // Current-price fallback is only for recent windows. Using it across the
+    // full 5y range creates a fake-flat chart, which is worse than showing a
+    // visibly incomplete historical estimate.
+    if (daysBetweenIso(dateIso, isoDateUTC(today)) <= CURRENT_PRICE_FALLBACK_DAYS) {
+      const current = currentPriceByKey.get(key);
+      if (current != null) return { price: current, quality: "estimated" };
+    }
+
+    return { price: null, quality: "missing" };
   }
 
   // Iterate with sparse stepping to keep the total row count small (~95 rows
@@ -580,6 +670,8 @@ export async function recomputeBackfillRange(userId: string): Promise<void> {
     const breakdown: NetWorthBreakdownUSD = { ...EMPTY_BREAKDOWN };
     let totalUsd = 0;
     let coveredUsd = 0;
+    let estimatedUsd = 0;
+    let historicalUsd = 0;
 
     for (const a of assets) {
       const qty = latestQty.get(a.id) ?? 0;
@@ -587,16 +679,20 @@ export async function recomputeBackfillRange(userId: string): Promise<void> {
       const todayUsd = todayUsdByAsset.get(a.id) ?? 0;
 
       let priceNative: number | null = null;
-      if (a.price_source === "manual") {
-        // Manual-priced: hold flat at today's value (case C in plan).
+      let usedEstimatedPricing = false;
+      if (a.asset_class === "cash") {
         priceNative = 1;
-      } else if (a.asset_class === "cash") {
+      } else if (a.price_source === "manual") {
+        // Manual-priced: hold flat at today's value and mark as estimated.
         priceNative = 1;
+        usedEstimatedPricing = true;
       } else if (a.external_id) {
-        priceNative = priceForDateOrFallback(
+        const priced = priceForDateOrFallback(
           `${a.external_id}|${a.price_source}`,
           dateIso,
         );
+        priceNative = priced.price;
+        usedEstimatedPricing = priced.quality === "estimated";
       }
       if (priceNative == null) continue;
 
@@ -607,8 +703,14 @@ export async function recomputeBackfillRange(userId: string): Promise<void> {
       else {
         const it = fxIters.get(cur);
         if (it) {
-          const rate = valueAtOrBefore(it, dateIso);
-          if (rate && rate > 0) usd = valueNative / rate;
+          const found = valueAtOrBefore(it, dateIso);
+          if (
+            found &&
+            found.value > 0 &&
+            daysBetweenIso(found.date, dateIso) <= MAX_FX_STALENESS_DAYS
+          ) {
+            usd = valueNative / found.value;
+          }
         }
         // Fallback: when historical FX data is unavailable for this date (the
         // Frankfurter/Yahoo fetch failed or hasn't populated yet), use today's
@@ -619,7 +721,10 @@ export async function recomputeBackfillRange(userId: string): Promise<void> {
         // "insufficient_coverage" gate.
         if (usd == null && fxRatesNow) {
           const spotRate = fxRatesNow[cur];
-          if (spotRate && spotRate > 0) usd = valueNative / spotRate;
+          if (spotRate && spotRate > 0) {
+            usd = valueNative / spotRate;
+            usedEstimatedPricing = true;
+          }
         }
       }
       if (usd == null) continue;
@@ -627,21 +732,36 @@ export async function recomputeBackfillRange(userId: string): Promise<void> {
       breakdown[a.asset_class] = (breakdown[a.asset_class] ?? 0) + usd;
       totalUsd += usd;
       coveredUsd += todayUsd;
+      if (usedEstimatedPricing) {
+        estimatedUsd += todayUsd;
+      } else {
+        historicalUsd += todayUsd;
+      }
     }
 
     const coverage_pct =
       totalTodayUsd > 0 ? Math.min(1, coveredUsd / totalTodayUsd) : 1;
+    const estimatedPct =
+      totalTodayUsd > 0 ? Math.min(1, estimatedUsd / totalTodayUsd) : 0;
+    const historicalPct =
+      totalTodayUsd > 0 ? Math.min(1, historicalUsd / totalTodayUsd) : 1;
+    const missingPct =
+      totalTodayUsd > 0 ? Math.max(0, 1 - coverage_pct) : 0;
+    const qualityMeta: SnapshotQualityMeta = {
+      valuation_quality: qualityFromFractions({
+        estimatedPct,
+        missingPct,
+      }),
+      estimated_pct: roundPct(estimatedPct),
+      missing_price_pct: roundPct(missingPct),
+      historical_price_pct: roundPct(historicalPct),
+    };
 
     synthetic.push({
       user_id: userId,
       snapshot_date: dateIso,
       total_usd: round2(totalUsd),
-      breakdown_usd: {
-        equity: round2(breakdown.equity),
-        etf: round2(breakdown.etf),
-        crypto: round2(breakdown.crypto),
-        cash: round2(breakdown.cash),
-      },
+      breakdown_usd: withQualityMeta(breakdown, qualityMeta),
       coverage_pct: roundPct(coverage_pct),
       is_backfilled: true,
       computed_at: new Date().toISOString(),

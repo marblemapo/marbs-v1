@@ -4,14 +4,32 @@ import { createClient } from "@/lib/supabase/server";
 
 export type TrendRange = "7d" | "2w" | "1m" | "6m" | "1y" | "2y" | "5y";
 
+export type TrendValuationQuality =
+  | "tracked"
+  | "historical"
+  | "partially_estimated"
+  | "mostly_estimated"
+  | "low_coverage";
+
 export type TrendPoint = {
   date: string;
   total_base: number;
   is_backfilled: boolean;
+  coverage_pct: number;
+  estimated_pct: number;
+  missing_price_pct: number;
+  valuation_quality: TrendValuationQuality;
+};
+
+export type RangeQuality = {
+  valuation_quality: TrendValuationQuality;
+  coverage_pct: number;
+  estimated_pct: number;
+  missing_price_pct: number;
 };
 
 export type RangeStatus =
-  | { available: true; points: TrendPoint[] }
+  | { available: true; points: TrendPoint[]; quality: RangeQuality }
   | { available: false; reason: "insufficient_coverage" | "no_data" };
 
 export type NetWorthHistoryResult = {
@@ -40,8 +58,8 @@ const RANGES: TrendRange[] = ["7d", "2w", "1m", "6m", "1y", "2y", "5y"];
  * Read the user's net-worth trend across all six ranges in one shot.
  * Converts stored USD values to the user's `base_currency` using
  * `fx_rate_history` (forward-filled per date). Ranges remain viewable even
- * when some snapshots have low coverage; the backfill layer carries missing
- * prices flat so incomplete provider data does not blank the chart.
+ * when some snapshots have low coverage; the backfill layer now labels
+ * incomplete provider data instead of flattening it across long ranges.
  */
 export async function getNetWorthHistory(): Promise<NetWorthHistoryResult> {
   const supabase = await createClient();
@@ -81,7 +99,9 @@ export async function getNetWorthHistory(): Promise<NetWorthHistoryResult> {
     .slice(0, 10);
   const { data: snaps } = await supabase
     .from("net_worth_snapshots")
-    .select("snapshot_date, total_usd, is_backfilled, coverage_pct")
+    .select(
+      "snapshot_date, total_usd, is_backfilled, coverage_pct, breakdown_usd",
+    )
     .eq("user_id", user.id)
     .gte("snapshot_date", fiveYearsAgo)
     .order("snapshot_date", { ascending: true });
@@ -131,14 +151,21 @@ export async function getNetWorthHistory(): Promise<NetWorthHistoryResult> {
     return fxSeries[best].rate;
   }
 
-  const allPoints: Array<TrendPoint & { coverage_pct: number }> = snaps.map(
-    (s) => ({
+  const allPoints: TrendPoint[] = snaps.map((s) => {
+    const meta = qualityMetaFromBreakdown(s.breakdown_usd, {
+      isBackfilled: s.is_backfilled,
+      coveragePct: Number(s.coverage_pct),
+    });
+    return {
       date: s.snapshot_date,
       total_base: round2(Number(s.total_usd) * rateFor(s.snapshot_date)),
       is_backfilled: s.is_backfilled,
       coverage_pct: Number(s.coverage_pct),
-    }),
-  );
+      estimated_pct: meta.estimated_pct,
+      missing_price_pct: meta.missing_price_pct,
+      valuation_quality: meta.valuation_quality,
+    };
+  });
 
   // Slice each range. Do not blank an entire range just because some
   // historical provider data is incomplete; partial estimates are still more
@@ -152,17 +179,14 @@ export async function getNetWorthHistory(): Promise<NetWorthHistoryResult> {
       .toISOString()
       .slice(0, 10);
     const slice = allPoints.filter((p) => p.date >= cutoff);
-    if (slice.length === 0) {
+    if (slice.length < 2) {
       series[r] = { available: false, reason: "no_data" };
       continue;
     }
     series[r] = {
       available: true,
-      points: slice.map((p) => ({
-        date: p.date,
-        total_base: p.total_base,
-        is_backfilled: p.is_backfilled,
-      })),
+      points: slice,
+      quality: summarizeRangeQuality(slice),
     };
   }
 
@@ -194,4 +218,104 @@ function emptyResult(
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
+}
+
+function qualityMetaFromBreakdown(
+  breakdown: unknown,
+  fallback: { isBackfilled: boolean; coveragePct: number },
+): RangeQuality {
+  const maybeMeta =
+    breakdown &&
+    typeof breakdown === "object" &&
+    "_meta" in breakdown &&
+    (breakdown as { _meta?: unknown })._meta &&
+    typeof (breakdown as { _meta?: unknown })._meta === "object"
+      ? ((breakdown as { _meta?: Record<string, unknown> })._meta ?? null)
+      : null;
+
+  if (maybeMeta) {
+    return {
+      valuation_quality: normalizeQuality(maybeMeta.valuation_quality),
+      coverage_pct: clampPct(fallback.coveragePct),
+      estimated_pct: clampPct(Number(maybeMeta.estimated_pct ?? 0)),
+      missing_price_pct: clampPct(Number(maybeMeta.missing_price_pct ?? 0)),
+    };
+  }
+
+  const missingPct = clampPct(1 - fallback.coveragePct);
+  return {
+    valuation_quality:
+      missingPct > 0.3
+        ? "low_coverage"
+        : fallback.isBackfilled
+          ? "partially_estimated"
+          : "tracked",
+    coverage_pct: clampPct(fallback.coveragePct),
+    estimated_pct: fallback.isBackfilled ? clampPct(1 - missingPct) : 0,
+    missing_price_pct: missingPct,
+  };
+}
+
+function summarizeRangeQuality(points: TrendPoint[]): RangeQuality {
+  let coverage = 0;
+  let estimated = 0;
+  let missing = 0;
+  let worstRank = -1;
+  let worst: TrendValuationQuality = "historical";
+
+  for (const p of points) {
+    coverage += p.coverage_pct;
+    estimated += p.estimated_pct;
+    missing += p.missing_price_pct;
+    const rank = qualityRank(p.valuation_quality);
+    if (rank > worstRank) {
+      worstRank = rank;
+      worst = p.valuation_quality;
+    }
+  }
+
+  const count = Math.max(points.length, 1);
+  return {
+    valuation_quality: worst,
+    coverage_pct: roundPct(coverage / count),
+    estimated_pct: roundPct(estimated / count),
+    missing_price_pct: roundPct(missing / count),
+  };
+}
+
+function normalizeQuality(value: unknown): TrendValuationQuality {
+  if (
+    value === "tracked" ||
+    value === "historical" ||
+    value === "partially_estimated" ||
+    value === "mostly_estimated" ||
+    value === "low_coverage"
+  ) {
+    return value;
+  }
+  return "partially_estimated";
+}
+
+function qualityRank(q: TrendValuationQuality): number {
+  switch (q) {
+    case "low_coverage":
+      return 4;
+    case "mostly_estimated":
+      return 3;
+    case "partially_estimated":
+      return 2;
+    case "tracked":
+      return 1;
+    case "historical":
+      return 0;
+  }
+}
+
+function clampPct(n: number): number {
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.min(1, n));
+}
+
+function roundPct(n: number): number {
+  return Math.round(n * 10000) / 10000;
 }

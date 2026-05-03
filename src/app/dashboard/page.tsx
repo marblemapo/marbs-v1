@@ -105,6 +105,9 @@ export default async function DashboardPage() {
           .eq("source", a.price_source);
 
         const symbol = (a.symbol ?? "").toUpperCase();
+        const needsStockRetry =
+          (a.asset_class === "equity" || a.asset_class === "etf") &&
+          (count ?? 0) < 1000;
         const needsMajorCryptoRetry =
           a.asset_class === "crypto" &&
           ["BTC", "BTC-USD", "BNB", "BNB-USD", "ETH", "ETH-USD"].includes(
@@ -112,7 +115,7 @@ export default async function DashboardPage() {
           ) &&
           (count ?? 0) < 1000;
 
-        return (count ?? 0) === 0 || needsMajorCryptoRetry;
+        return (count ?? 0) === 0 || needsStockRetry || needsMajorCryptoRetry;
       }),
     );
     const hasSparsePriceHistory = historyChecks.some(Boolean);
@@ -128,11 +131,21 @@ export default async function DashboardPage() {
       // Sample the most-recent backfilled rows to detect a bad (all-zero) run.
       const { data: recentSnaps } = await supabase
         .from("net_worth_snapshots")
-        .select("total_usd, coverage_pct")
+        .select("total_usd, coverage_pct, breakdown_usd")
         .eq("user_id", user.id)
         .eq("is_backfilled", true)
         .order("snapshot_date", { ascending: false })
         .limit(10);
+      const isOldQualityModel =
+        (recentSnaps ?? []).length >= 5 &&
+        (recentSnaps ?? []).every((s) => {
+          const breakdown = s.breakdown_usd;
+          return !(
+            breakdown &&
+            typeof breakdown === "object" &&
+            "_meta" in breakdown
+          );
+        });
       const isBadBackfill =
         (recentSnaps ?? []).length >= 5 &&
         (recentSnaps ?? []).every(
@@ -141,7 +154,9 @@ export default async function DashboardPage() {
       const hasLowCoverageBackfill =
         (recentSnaps ?? []).length >= 5 &&
         (recentSnaps ?? []).every((s) => Number(s.coverage_pct) < 0.7);
-      if (isBadBackfill) {
+      if (isOldQualityModel) {
+        after(() => recomputeBackfillRange(user.id));
+      } else if (isBadBackfill) {
         after(() => recomputeBackfillRange(user.id));
       } else if (hasLowCoverageBackfill) {
         after(() => recomputeBackfillRange(user.id));

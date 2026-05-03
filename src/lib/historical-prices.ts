@@ -45,17 +45,30 @@ export async function fetchYahooHistory(
   ticker: string,
 ): Promise<HistoricalPricePoint[] | null> {
   try {
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(
-      ticker,
-    )}?range=5y&interval=1d`;
-    const res = await fetch(url, {
-      headers: { "User-Agent": YAHOO_UA },
-      next: { revalidate: 86400 }, // 24h
-      signal: AbortSignal.timeout(8000), // fail fast; fallback to CoinGecko for crypto
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
-    const result = data?.chart?.result?.[0];
+    const hosts = ["query1.finance.yahoo.com", "query2.finance.yahoo.com"];
+    let data: unknown = null;
+    for (const host of hosts) {
+      const url = `https://${host}/v8/finance/chart/${encodeURIComponent(
+        ticker,
+      )}?range=5y&interval=1d`;
+      const res = await fetch(url, {
+        headers: { "User-Agent": YAHOO_UA },
+        next: { revalidate: 86400 }, // 24h
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!res.ok) continue;
+      data = await res.json();
+      break;
+    }
+    if (!data) return null;
+    const result = (data as { chart?: { result?: unknown[] } })?.chart
+      ?.result?.[0] as
+      | {
+          timestamp?: number[];
+          indicators?: { quote?: Array<{ close?: Array<number | null> }> };
+          meta?: { currency?: string };
+        }
+      | undefined;
     if (!result) return null;
 
     const timestamps: number[] = result.timestamp ?? [];
@@ -200,7 +213,6 @@ export async function backfillPriceHistoryForAsset(
   if ((!points || points.length === 0) && asset.asset_class === "crypto") {
     points = await fetchCoinGeckoHistory(asset.external_id, asset.native_currency);
   }
-
   if (!points || points.length === 0) {
     return { inserted: 0, oldestDate: null };
   }

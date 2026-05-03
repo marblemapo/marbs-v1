@@ -13,6 +13,7 @@ import {
 import { cn } from "@/lib/utils";
 import type {
   RangeStatus,
+  TrendPoint,
   TrendRange,
 } from "@/app/actions/net-worth-history";
 
@@ -76,6 +77,40 @@ function formatXTick(dateIso: string, range: TrendRange): string {
   return d.toLocaleDateString("en-US", { year: "numeric", timeZone: "UTC" });
 }
 
+function qualityLabel(status: RangeStatus): string | null {
+  if (!status.available) return null;
+  const q = status.quality;
+  if (q.valuation_quality === "low_coverage") {
+    return `Low history coverage`;
+  }
+  if (q.valuation_quality === "mostly_estimated") {
+    return `Mostly estimated`;
+  }
+  if (q.valuation_quality === "partially_estimated") {
+    const pct = Math.round(Math.max(q.estimated_pct, q.missing_price_pct) * 100);
+    return pct > 0 ? `${pct}% estimated or missing` : "Partly estimated";
+  }
+  return null;
+}
+
+function tooltipQualityLabel(point: Partial<TrendPoint> | undefined): string {
+  if (!point) return "";
+  if (point.missing_price_pct && point.missing_price_pct > 0.3) {
+    return " (low history coverage)";
+  }
+  if (point.estimated_pct && point.estimated_pct > 0.3) {
+    return " (mostly estimated)";
+  }
+  if (
+    point.valuation_quality === "partially_estimated" ||
+    (point.estimated_pct && point.estimated_pct > 0.05) ||
+    (point.missing_price_pct && point.missing_price_pct > 0.05)
+  ) {
+    return " (partly estimated)";
+  }
+  return point.is_backfilled ? " (estimated)" : "";
+}
+
 export function NetWorthTrendChart({
   series,
   baseCurrency,
@@ -91,15 +126,18 @@ export function NetWorthTrendChart({
     return "1y";
   }, [series]);
 
-  const [range, setRange] = useState<TrendRange>(defaultRange);
+  const [requestedRange, setRequestedRange] = useState<TrendRange>(defaultRange);
   const [howOpen, setHowOpen] = useState(false);
 
+  const range = series[requestedRange].available ? requestedRange : defaultRange;
   const status = series[range];
+
   // Memoize points so the yDomain useMemo below has a stable dependency.
   const points = useMemo(
     () => (status.available ? status.points : []),
     [status],
   );
+  const rangeQualityLabel = qualityLabel(status);
   const emptyMessage =
     !status.available && status.reason === "insufficient_coverage"
       ? "Not enough price history for this range yet."
@@ -141,7 +179,7 @@ export function NetWorthTrendChart({
                 key={key}
                 type="button"
                 disabled={disabled}
-                onClick={() => !disabled && setRange(key)}
+                onClick={() => !disabled && setRequestedRange(key)}
                 title={
                   disabled
                     ? s.reason === "no_data"
@@ -219,10 +257,8 @@ export function NetWorthTrendChart({
                 }
                 formatter={(value, _name, ctx) => {
                   const num = Number(value);
-                  const payload = ctx?.payload as
-                    | { is_backfilled?: boolean }
-                    | undefined;
-                  const tag = payload?.is_backfilled ? " (estimated)" : "";
+                  const payload = ctx?.payload as Partial<TrendPoint> | undefined;
+                  const tag = tooltipQualityLabel(payload);
                   return [
                     `${formatFull(num, baseCurrency)}${tag}`,
                     "Net worth",
@@ -245,31 +281,18 @@ export function NetWorthTrendChart({
                   }}
                 />
               )}
-              {/* Backfilled segment — dashed, muted */}
               <Line
                 type="monotone"
-                dataKey={(p: { total_base: number; is_backfilled: boolean }) =>
-                  p.is_backfilled ? p.total_base : null
-                }
-                stroke="#7FFFD4"
-                strokeWidth={2}
-                strokeDasharray="4 4"
-                strokeOpacity={0.55}
-                dot={false}
-                isAnimationActive={false}
-                connectNulls={false}
-              />
-              {/* Tracked segment — solid, full opacity */}
-              <Line
-                type="monotone"
-                dataKey={(p: { total_base: number; is_backfilled: boolean }) =>
-                  p.is_backfilled ? null : p.total_base
-                }
+                dataKey="total_base"
                 stroke="#7FFFD4"
                 strokeWidth={2.5}
-                dot={false}
+                strokeDasharray={
+                  points.every((p) => p.is_backfilled) ? "4 4" : undefined
+                }
+                strokeOpacity={status.available ? 0.9 : 0.55}
+                dot={points.length <= 2 ? { r: 2.5, fill: "#7FFFD4" } : false}
                 isAnimationActive={false}
-                connectNulls={false}
+                connectNulls
               />
             </LineChart>
           </ResponsiveContainer>
@@ -286,6 +309,7 @@ export function NetWorthTrendChart({
           How this is calculated
         </button>
         <span className="font-plex text-[11px] text-text-muted/70">
+          {rangeQualityLabel ? `${rangeQualityLabel} · ` : ""}
           Values in {baseCurrency}
         </span>
       </div>
@@ -293,22 +317,17 @@ export function NetWorthTrendChart({
       {howOpen && (
         <div className="rounded-xl border border-white/[0.08] bg-black/40 p-4 flex flex-col gap-2 text-[12px] text-text-secondary leading-relaxed">
           <p>
-            <span className="text-foreground">Solid line</span> — your actual
-            tracked net worth, snapshotted daily.
+            The trend uses daily tracked snapshots where available and synthetic
+            history before tracking began.
           </p>
           <p>
-            <span className="text-foreground">Dashed line</span> — estimate,
-            before you started tracking.
+            Synthetic history assumes today&apos;s holdings existed in the past,
+            then prices them with historical market data.
           </p>
           <p className="text-text-muted">
-            Estimates assume you held today&apos;s portfolio at the time, priced
-            at historical market rates. Real past values may differ if your
-            holdings changed.
-          </p>
-          <p className="text-text-muted">
-            When a holding is missing history for part of a range, the estimate
-            carries the nearest available price, or today&apos;s cached price if no
-            history exists yet.
+            When market history is incomplete, the chart keeps the range
+            viewable but marks that portion as estimated or missing instead of
+            flattening the asset across the full range.
           </p>
           {hasManualPricedAssets && (
             <p className="text-text-muted">
