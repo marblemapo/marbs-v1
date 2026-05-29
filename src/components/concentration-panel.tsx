@@ -24,14 +24,14 @@ export function ConcentrationPanel({ report }: { report: ConcentrationReport }) 
       </h2>
 
       {headline ? (
-        <div className="flex flex-col gap-5 p-6 rounded-2xl bg-[#0A0A0A] border border-white/[0.08]">
+        <div className="flex flex-col gap-5 p-7 rounded-2xl bg-[#0A0A0A] border border-white/[0.08]">
           {/* Lead finding */}
           <div className="flex items-start gap-3">
             <span
               className={`mt-[7px] w-2 h-2 rounded-full shrink-0 ${dotClass[headline.severity]}`}
             />
             <div className="flex flex-col gap-1.5">
-              <div className="font-sans text-lg font-bold leading-snug tracking-[-0.01em]">
+              <div className="font-display text-lg font-bold leading-snug tracking-[-0.02em]">
                 {headline.headline}
               </div>
               <div className="text-sm text-text-secondary leading-relaxed">
@@ -80,7 +80,7 @@ export function ConcentrationPanel({ report }: { report: ConcentrationReport }) 
           )}
         </div>
       ) : (
-        <div className="p-6 rounded-2xl bg-[#0A0A0A] border border-white/[0.08]">
+        <div className="p-7 rounded-2xl bg-[#0A0A0A] border border-white/[0.08]">
           <div className="text-sm text-text-secondary leading-relaxed">
             Your portfolio looks broadly balanced — no single name or asset
             class dominates. The moment that changes, you&apos;ll see it here.
