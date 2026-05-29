@@ -13,12 +13,14 @@ import {
 } from "@/components/connected-wallets-section";
 import { NetWorthHero } from "@/components/networth-hero";
 import { NetWorthTrendCard } from "@/components/networth-trend-card";
+import { ConcentrationPanel } from "@/components/concentration-panel";
 import { EmptyHoldingsCard } from "@/components/empty-holdings-card";
 import { DangerZone } from "@/components/danger-zone";
 import { CurrencyProvider } from "@/components/currency-context";
 import { fetchFxRates, convertFx } from "@/lib/fx";
 import { fetchPrice } from "@/lib/prices";
 import { backfillUserHistory, recomputeBackfillRange } from "@/lib/net-worth";
+import { analyzeConcentration, type Holding } from "@/lib/insights";
 
 const PRICE_TTL_MS = 10 * 60 * 1000;
 
@@ -347,6 +349,21 @@ export default async function DashboardPage() {
     return bv - av;
   });
 
+  const holdings: Holding[] = rowsWithValue
+    .map((r) => {
+      const v = baseValue(r);
+      return v == null
+        ? null
+        : {
+            name: r.name,
+            symbol: r.symbol,
+            assetClass: r.asset_class as Holding["assetClass"],
+            valueBase: v,
+          };
+    })
+    .filter((h): h is Holding => h !== null);
+  const concentration = analyzeConcentration(holdings);
+
   return (
     <main className="f3-stage flex-1">
       <div className="mx-auto w-full max-w-[780px] px-6 pt-14 pb-24 flex flex-col gap-10 f3-fade-in">
@@ -399,6 +416,10 @@ export default async function DashboardPage() {
               previous_value_native: r.previous_value_native,
             }))}
           />
+
+          {rowsWithValue.length > 0 && (
+            <ConcentrationPanel report={concentration} />
+          )}
 
           <NetWorthTrendCard />
 
