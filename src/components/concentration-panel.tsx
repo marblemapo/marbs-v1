@@ -31,7 +31,7 @@ export function ConcentrationPanel({ report }: { report: ConcentrationReport }) 
               className={`mt-[7px] w-2 h-2 rounded-full shrink-0 ${dotClass[headline.severity]}`}
             />
             <div className="flex flex-col gap-1.5">
-              <div className="font-display text-lg font-bold leading-snug tracking-[-0.02em]">
+              <div className="font-display text-base font-medium leading-snug tracking-[-0.02em]">
                 {headline.headline}
               </div>
               <div className="text-sm text-text-secondary leading-relaxed">
