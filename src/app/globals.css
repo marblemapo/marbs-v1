@@ -377,6 +377,16 @@
     0%   { color: var(--semantic-loss); }
     100% { color: inherit; }
   }
+
+  /* Concentration panel disclosure caret — rotates 180° when <details> open.
+     Lets the panel stay a server component (no React state needed for toggle). */
+  .insights-caret {
+    display: inline-block;
+    transition: transform 200ms ease;
+  }
+  details[open] > summary .insights-caret {
+    transform: rotate(180deg);
+  }
 }
 
 /* ============================================================

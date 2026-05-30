@@ -46,6 +46,36 @@ export type DrawdownScenario = {
   valueLost: number; // absolute base-currency value lost (caller formats)
 };
 
+/**
+ * Multi-shock stress matrix: single-name, sector, and macro-correlated shocks.
+ * The asymmetry the panel surfaces — a single-name shock is bounded by one
+ * position's weight; a correlated shock hits the whole cluster at once.
+ */
+export type Scenario = {
+  /** Human-readable label, e.g. "Tesla Inc −35%". */
+  label: string;
+  kind: "single_name" | "sector" | "macro";
+  /** Fraction of NAV exposed to the shock (e.g. 0.5 for 50%). */
+  positionPct: number;
+  /** Shock magnitude (e.g. 0.35 for a 35% drop). */
+  shockPct: number;
+  /** Resulting NAV loss as a fraction (positionPct × shockPct). */
+  impactPct: number;
+  /** Absolute base-currency loss (caller formats). */
+  valueLost: number;
+};
+
+/**
+ * Templated recommendation derived from the lead finding. Bold runs in `text`
+ * are wrapped in **double asterisks** for inline emphasis in the panel.
+ * Phrased as structural rules (caps, timeframes, behavioral guardrails), not
+ * specific buy/sell calls — keeps the engine on the right side of "advice".
+ */
+export type Move = {
+  text: string;
+  coda: string;
+};
+
 /** A macro factor a holding loads on, used to detect hidden correlation. */
 export type Factor =
   | "ai_semis"
@@ -79,7 +109,12 @@ export type ConcentrationReport = {
   findings: Finding[];
   /** The single most important finding to lead with, or null if balanced. */
   headline: Finding | null;
-  scenario: DrawdownScenario | null;
+  /** Severity-derived 0–5 score for the panel's risk meter. */
+  riskLevel: number;
+  /** Stress scenarios in priority order: single-name, sector, macro. */
+  scenarios: Scenario[];
+  /** Templated recommendation derived from the lead finding's kind. */
+  move: Move | null;
 };
 
 // Thresholds encode a judgment call, not a law. A single position above ~20% of
@@ -163,7 +198,9 @@ export function analyzeConcentration(holdings: Holding[]): ConcentrationReport {
       factors: [],
       findings: [],
       headline: null,
-      scenario: null,
+      riskLevel: 0,
+      scenarios: [],
+      move: null,
     };
   }
 
@@ -336,17 +373,57 @@ export function analyzeConcentration(holdings: Holding[]): ConcentrationReport {
     }
   }
 
-  // Stress the largest volatile position. Skip cash and stablecoins — they do
-  // not crater 35% in a day, so a scenario on them would be nonsense.
-  const scenario: DrawdownScenario | null =
-    largest.assetClass !== "cash" && !largestIsStable
-      ? {
-          positionName: largest.name,
-          dropPct: SCENARIO_DROP,
-          netWorthImpactPct: largest.pct * SCENARIO_DROP,
-          valueLost: largest.value * SCENARIO_DROP,
-        }
-      : null;
+  // Stress scenarios — three flavors of shock. The single-name is the existing
+  // one; sector and macro expose the cost the position view hides (a
+  // correlated cluster moves together, so the macro shock is often the biggest
+  // even though no single position drops that much).
+  const scenarios: Scenario[] = [];
+
+  if (largest.assetClass !== "cash" && !largestIsStable) {
+    scenarios.push({
+      label: `${largest.name} −35%`,
+      kind: "single_name",
+      positionPct: largest.pct,
+      shockPct: SCENARIO_DROP,
+      impactPct: largest.pct * SCENARIO_DROP,
+      valueLost: largest.value * SCENARIO_DROP,
+    });
+  }
+
+  const cryptoFactorEntry = factors.find((f) => f.factor === "crypto");
+  if (cryptoFactorEntry && cryptoFactorEntry.pct >= 0.1) {
+    scenarios.push({
+      label: "Crypto sector −30%",
+      kind: "sector",
+      positionPct: cryptoFactorEntry.pct,
+      shockPct: 0.3,
+      impactPct: cryptoFactorEntry.pct * 0.3,
+      valueLost: cryptoFactorEntry.value * 0.3,
+    });
+  }
+
+  if (riskOnPct >= 0.4) {
+    scenarios.push({
+      label: "Risk-on macro −25% (liquidity event)",
+      kind: "macro",
+      positionPct: riskOnPct,
+      shockPct: 0.25,
+      impactPct: riskOnPct * 0.25,
+      valueLost: riskOnValue * 0.25,
+    });
+  }
+
+  // Severity-derived 0–5 risk score for the meter. Each high finding adds 2,
+  // each elevated adds 1, info adds 0. Capped at 5.
+  const riskScore = findings.reduce(
+    (s, f) =>
+      s + (f.severity === "high" ? 2 : f.severity === "elevated" ? 1 : 0),
+    0,
+  );
+  const riskLevel = Math.min(5, riskScore);
+
+  const lead = findings[0] ?? null;
+  const move: Move | null = lead ? buildMove(lead, largest) : null;
 
   return {
     netWorth,
@@ -355,7 +432,50 @@ export function analyzeConcentration(holdings: Holding[]): ConcentrationReport {
     positions,
     factors,
     findings,
-    headline: findings[0] ?? null,
-    scenario,
+    headline: lead,
+    riskLevel,
+    scenarios,
+    move,
   };
+}
+
+/**
+ * Templated recommendation per finding kind. Phrased as structural rules
+ * (position caps, cluster caps, behavioral pre-commitments) — never as
+ * specific buy/sell calls. Returns null for info-level findings where there's
+ * nothing to act on (stablecoin_buffer, cash_drag).
+ */
+function buildMove(
+  headline: Finding,
+  largest: { name: string },
+): Move | null {
+  switch (headline.kind) {
+    case "one_bet":
+      return {
+        text: `Bring **${largest.name} to ≤35%** and the risk-on cluster to **≤70%** over the next 90 days. Trim mechanically on strength — **pre-commit the amount now**, before the position rallies again. Sweep proceeds to cash or an uncorrelated bucket, not into another tech name.`,
+        coda: `The fix is structural, not predictive. You're not betting against ${largest.name} — you're refusing to let any single name run your net worth.`,
+      };
+    case "single_name":
+      return {
+        text: `Bring **${largest.name} to ≤35%** over the next 90 days. Trim mechanically on strength — **pre-commit the amount now**. Sweep proceeds to cash or an uncorrelated bucket, not into a correlated name.`,
+        coda: `Cap any single position at 40% and stick to it. The fix is structural, not predictive.`,
+      };
+    case "diversification_illusion":
+      return {
+        text: `Cap any single position at **≤40%** and your top-3 at **≤70%**. Trim mechanically over 90 days — start with the largest.`,
+        coda: `Diversification is a count plus a distribution. The count is fine; the distribution isn't.`,
+      };
+    case "crypto_heavy":
+      return {
+        text: `Cap crypto exposure at **≤30%** of net worth. Trim mechanically over 90 days into a defensive bucket — cash or stablecoins, not another high-beta name.`,
+        coda: `Crypto is a position-size question, not a market call. Set the cap once.`,
+      };
+    case "factor_concentration":
+      return {
+        text: `Cap AI/semis exposure at **≤25%** of net worth. Trim names already concentrated; route new capital to uncorrelated buckets.`,
+        coda: `AI is a real trend and a single factor. Both are true at once.`,
+      };
+    default:
+      return null;
+  }
 }
