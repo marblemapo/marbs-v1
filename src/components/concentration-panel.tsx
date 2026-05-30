@@ -9,9 +9,12 @@ const dotClass: Record<Severity, string> = {
 const pct = (n: number) => `${Math.round(n * 100)}%`;
 
 /**
- * Presentational read of a ConcentrationReport. Pure percentages/counts, so it
- * renders identically regardless of the user's display currency. Shared by the
- * dashboard and the public Portfolio X-Ray.
+ * Presentational read of a ConcentrationReport. Visual hierarchy:
+ *   stat (font-display, large)    — "82%" lifted as the typographic hero
+ *   caption (text-secondary)      — short phrase that completes the sentence
+ *   detail (text-muted, small)    — one-line context
+ * Secondaries collapse to a single line each (dot · stat · caption, no prose).
+ * Shared by the dashboard and (eventually) the public Portfolio X-Ray.
  */
 export function ConcentrationPanel({ report }: { report: ConcentrationReport }) {
   const { headline, findings, scenario } = report;
@@ -24,20 +27,24 @@ export function ConcentrationPanel({ report }: { report: ConcentrationReport }) 
       </h2>
 
       {headline ? (
-        <div className="flex flex-col gap-5 p-7 rounded-2xl bg-[#0A0A0A] border border-white/[0.08]">
-          {/* Lead finding */}
-          <div className="flex items-start gap-3">
-            <span
-              className={`mt-[7px] w-2 h-2 rounded-full shrink-0 ${dotClass[headline.severity]}`}
-            />
-            <div className="flex flex-col gap-1.5">
-              <div className="font-display text-base font-medium leading-snug tracking-[-0.02em]">
+        <div className="flex flex-col gap-6 p-7 rounded-2xl bg-[#0A0A0A] border border-white/[0.08]">
+          {/* Lead — stat lifted as the typographic hero */}
+          <div className="flex flex-col gap-2">
+            <div className="flex items-baseline gap-3 flex-wrap">
+              {headline.stat && (
+                <span className="font-display text-3xl font-bold tabular-nums tracking-[-0.03em] leading-none">
+                  {headline.stat}
+                </span>
+              )}
+              <span className="text-base text-text-secondary leading-snug">
                 {headline.headline}
-              </div>
-              <div className="text-sm text-text-secondary leading-relaxed">
-                {headline.detail}
-              </div>
+              </span>
             </div>
+            {headline.detail && (
+              <p className="text-sm text-text-muted leading-relaxed">
+                {headline.detail}
+              </p>
+            )}
           </div>
 
           {/* Stress test */}
@@ -60,30 +67,32 @@ export function ConcentrationPanel({ report }: { report: ConcentrationReport }) 
             </div>
           )}
 
-          {/* Secondary findings */}
+          {/* Secondary findings — one-liners, no detail prose */}
           {rest.length > 0 && (
-            <div className="flex flex-col gap-2.5 pt-4 border-t border-white/[0.06]">
+            <ul className="flex flex-col gap-2.5 pt-4 border-t border-white/[0.06]">
               {rest.map((f, i) => (
-                <div key={i} className="flex items-start gap-3">
+                <li key={i} className="flex items-center gap-3">
                   <span
-                    className={`mt-[7px] w-1.5 h-1.5 rounded-full shrink-0 ${dotClass[f.severity]}`}
+                    className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotClass[f.severity]}`}
                   />
-                  <span className="text-sm text-text-secondary leading-relaxed">
-                    <span className="text-foreground font-medium">
-                      {f.headline}
-                    </span>{" "}
-                    {f.detail}
-                  </span>
-                </div>
+                  <div className="text-sm flex items-baseline gap-1.5 flex-wrap">
+                    {f.stat && (
+                      <span className="font-display font-medium tabular-nums text-foreground">
+                        {f.stat}
+                      </span>
+                    )}
+                    <span className="text-text-secondary">{f.headline}</span>
+                  </div>
+                </li>
               ))}
-            </div>
+            </ul>
           )}
         </div>
       ) : (
         <div className="p-7 rounded-2xl bg-[#0A0A0A] border border-white/[0.08]">
           <div className="text-sm text-text-secondary leading-relaxed">
-            Your portfolio looks broadly balanced — no single name or asset
-            class dominates. The moment that changes, you&apos;ll see it here.
+            No single name or class dominates. The moment that changes,
+            you&apos;ll see it here.
           </div>
         </div>
       )}
