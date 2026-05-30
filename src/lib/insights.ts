@@ -31,9 +31,11 @@ export type Finding = {
     | "stablecoin_buffer"
     | "cash_drag";
   severity: Severity;
-  /** One-line, percentage-based headline, safe to render as-is. */
+  /** Headline statistic for the visual lift, e.g. "82%" or "50%". */
+  stat: string | null;
+  /** Short caption that reads after the stat, e.g. "is one bet — your stocks and crypto move together". Concatenated with `stat` forms the natural sentence. */
   headline: string;
-  /** Supporting sentence — the "so what". */
+  /** One-line supporting context, ~10–15 words. */
   detail: string;
 };
 
@@ -234,9 +236,10 @@ export function analyzeConcentration(holdings: Holding[]): ConcentrationReport {
     findings.push({
       kind: "one_bet",
       severity: "high",
-      headline: `You hold ${positions.length} positions across stocks and crypto, but ${pct(riskOnPct)} of your net worth is one bet: risk-on tech and liquidity.`,
+      stat: pct(riskOnPct),
+      headline: "is one bet — your stocks and crypto move together",
       detail:
-        "US growth tech and crypto rise and fall on the same thing, risk appetite and liquidity. When the macro turns, your stocks and your coins drop together. Splitting across asset classes is not the diversification it looks like.",
+        "US growth tech and crypto ride the same liquidity. Splitting asset classes isn't diversification here.",
     });
   }
 
@@ -247,9 +250,9 @@ export function analyzeConcentration(holdings: Holding[]): ConcentrationReport {
     findings.push({
       kind: "diversification_illusion",
       severity: "high",
-      headline: `You hold ${positions.length} positions, but your top 3 are ${pct(top3Pct)} of your net worth.`,
-      detail:
-        "The long tail is rounding error. Your outcome is decided by a handful of names — you're less diversified than the count suggests.",
+      stat: pct(top3Pct),
+      headline: "is your top 3 holdings — the rest is rounding error",
+      detail: "You're less diversified than the position count suggests.",
     });
   }
 
@@ -263,14 +266,15 @@ export function analyzeConcentration(holdings: Holding[]): ConcentrationReport {
     findings.push({
       kind: "single_name",
       severity: severe ? "high" : "elevated",
-      headline: `${largest.name} is ${pct(largest.pct)} of everything you own.`,
+      stat: pct(largest.pct),
+      headline: `is ${largest.name}`,
       detail: severe
         ? isCrypto
-          ? "This isn't a position, it's your whole thesis. One bad week for this token is a bad year for your net worth."
-          : "This isn't a position, it's the whole thesis. One company's bad quarter is your bad year."
+          ? "One bad week for this token is a bad year for your net worth."
+          : "One bad quarter for this company is a bad year for your net worth."
         : isCrypto
-          ? "A token this size means your net worth moves with one coin's story more than the market's."
-          : "A name this size means your net worth tracks one company's story more than the market's.",
+          ? "Net worth moves with one coin's story, not the market's."
+          : "Net worth moves with one company's story, not the market's.",
     });
   }
 
@@ -280,8 +284,9 @@ export function analyzeConcentration(holdings: Holding[]): ConcentrationReport {
     findings.push({
       kind: "factor_concentration",
       severity: "elevated",
-      headline: `${pct(aiSemis.pct)} of your net worth is the AI and semiconductor trade specifically.`,
-      detail: `${aiSemis.names.slice(0, 3).join(", ")} are one story. If the AI capex cycle cools, this block moves as a unit.`,
+      stat: pct(aiSemis.pct),
+      headline: "is the AI and semiconductor trade",
+      detail: `${aiSemis.names.slice(0, 3).join(", ")} are one story. If AI capex cools, this block moves as a unit.`,
     });
   }
 
@@ -291,9 +296,9 @@ export function analyzeConcentration(holdings: Holding[]): ConcentrationReport {
     findings.push({
       kind: "crypto_heavy",
       severity: cryptoPct >= CRYPTO_HIGH ? "high" : "elevated",
-      headline: `Crypto is ${pct(cryptoPct)} of your net worth.`,
-      detail:
-        "A normal crypto week moves this much of your wealth. Make sure that volatility is a choice, not a surprise.",
+      stat: pct(cryptoPct),
+      headline: "is crypto",
+      detail: "A normal crypto week moves this much of your wealth. Make sure that's a choice.",
     });
   }
 
@@ -302,9 +307,9 @@ export function analyzeConcentration(holdings: Holding[]): ConcentrationReport {
     findings.push({
       kind: "stablecoin_buffer",
       severity: "info",
-      headline: `${pct(stablePct)} of your holdings are stablecoins — cash-like, not crypto risk.`,
-      detail:
-        "Useful dry powder, but not the volatile bet 'crypto' implies. Count it as cash when you judge your real exposure.",
+      stat: pct(stablePct),
+      headline: "is stablecoins — cash-like, not crypto risk",
+      detail: "Useful dry powder. Count it as cash, not the volatile bet 'crypto' implies.",
     });
   }
 
@@ -313,14 +318,23 @@ export function analyzeConcentration(holdings: Holding[]): ConcentrationReport {
     findings.push({
       kind: "cash_drag",
       severity: "info",
-      headline: `${pct(cashPct)} of your net worth is sitting in cash.`,
-      detail:
-        "Sometimes that's intent (dry powder); sometimes it's inertia losing to inflation. Worth knowing which.",
+      stat: pct(cashPct),
+      headline: "is sitting in cash",
+      detail: "Intent (dry powder) or inertia losing to inflation? Worth knowing which.",
     });
   }
 
   const rank: Record<Severity, number> = { high: 0, elevated: 1, info: 2 };
   findings.sort((a, b) => rank[a.severity] - rank[b.severity]);
+
+  // Dedup: when the lead isn't single_name, the stress test below names the
+  // largest position — a secondary single_name about the same position adds
+  // nothing new. Drop it so the same name doesn't appear twice in the panel.
+  if (findings[0]?.kind !== "single_name") {
+    for (let i = findings.length - 1; i > 0; i--) {
+      if (findings[i].kind === "single_name") findings.splice(i, 1);
+    }
+  }
 
   // Stress the largest volatile position. Skip cash and stablecoins — they do
   // not crater 35% in a day, so a scenario on them would be nonsense.
