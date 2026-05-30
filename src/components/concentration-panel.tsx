@@ -232,13 +232,14 @@ function PositionWeights({ positions }: { positions: Position[] }) {
   const remaining = positions.length > 4 ? positions.slice(4) : [];
   const remainingPct = remaining.reduce((s, p) => s + p.pct, 0);
 
-  // Proportional grid-row spans for the right column so visual heights track
-  // each holding's share of the rest group.
+  // Proportional flex weights for the right column so cell heights track each
+  // holding's share of the rest group. Flexbox is more reliable than CSS grid
+  // here — grid's row sizing without explicit grid-template-rows can leave
+  // cells un-stretched, which let the Tesla cell visually overflow.
   const restTotal = rest.reduce((s, p) => s + p.pct, 0);
-  const spans = rest.map((p) =>
-    restTotal > 0 ? Math.max(1, Math.round((p.pct / restTotal) * 10)) : 1,
+  const flexes = rest.map((p) =>
+    restTotal > 0 ? Math.max(0.5, p.pct / restTotal) : 1,
   );
-  const totalSpan = spans.reduce((s, n) => s + n, 0) || 1;
 
   return (
     <div className="flex flex-col gap-3">
@@ -247,20 +248,19 @@ function PositionWeights({ positions }: { positions: Position[] }) {
         aside={`Top 3 = ${pct(top3Pct)}`}
       />
       <div
-        className="grid gap-1"
-        style={{ gridTemplateColumns: "5fr 3fr", height: 240 }}
+        className="flex gap-1 overflow-hidden"
+        style={{ height: 240 }}
       >
-        <TmCell position={top1} large />
+        <div className="flex-[5] min-h-0 min-w-0">
+          <TmCell position={top1} large />
+        </div>
         {rest.length > 0 && (
-          <div
-            className="grid gap-1"
-            style={{ gridTemplateRows: `repeat(${totalSpan}, minmax(0, 1fr))` }}
-          >
+          <div className="flex-[3] min-h-0 min-w-0 flex flex-col gap-1">
             {rest.map((p, i) => (
               <div
                 key={p.name}
                 className="min-h-0"
-                style={{ gridRow: `span ${spans[i]} / span ${spans[i]}` }}
+                style={{ flex: `${flexes[i]} ${flexes[i]} 0%` }}
               >
                 <TmCell position={p} />
               </div>
