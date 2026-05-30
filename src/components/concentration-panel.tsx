@@ -326,10 +326,12 @@ function TmCell({
           : "text-[#7FFFD4]";
   return (
     <div
-      className={`relative h-full p-3.5 rounded-lg border flex flex-col justify-between overflow-hidden ${tint}`}
+      className={`relative h-full p-4 rounded-lg border flex flex-col justify-between overflow-hidden ${tint}`}
     >
       <div className="min-w-0">
-        <div className="text-sm text-foreground font-medium truncate">
+        <div
+          className={`text-foreground font-medium truncate ${large ? "text-base" : "text-sm"}`}
+        >
           {position.name}
         </div>
         {position.symbol && (
@@ -339,8 +341,8 @@ function TmCell({
         )}
       </div>
       <div
-        className={`font-display tabular-nums font-bold tracking-[-0.02em] ${pctColor}`}
-        style={{ fontSize: large ? 32 : 18 }}
+        className={`font-display tabular-nums font-bold tracking-[-0.03em] leading-none ${pctColor}`}
+        style={{ fontSize: large ? 56 : 20 }}
       >
         {pct(position.pct)}
       </div>
