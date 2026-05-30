@@ -364,6 +364,19 @@ export function analyzeConcentration(holdings: Holding[]): ConcentrationReport {
   const rank: Record<Severity, number> = { high: 0, elevated: 1, info: 2 };
   findings.sort((a, b) => rank[a.severity] - rank[b.severity]);
 
+  // Severity-derived 0–5 risk score — computed BEFORE the display-only
+  // single_name dedup, so suppressed-from-display findings still count toward
+  // overall risk. High weighted heavily (each contributes 4 — one high is
+  // enough to put the meter solidly in the red zone), elevated 2, info 0.
+  // The panel derives the "high / elevated / low" tier from this score so
+  // label and meter share a single source of truth.
+  const riskScore = findings.reduce(
+    (s, f) =>
+      s + (f.severity === "high" ? 4 : f.severity === "elevated" ? 2 : 0),
+    0,
+  );
+  const riskLevel = Math.min(5, riskScore);
+
   // Dedup: when the lead isn't single_name, the stress test below names the
   // largest position — a secondary single_name about the same position adds
   // nothing new. Drop it so the same name doesn't appear twice in the panel.
@@ -412,15 +425,6 @@ export function analyzeConcentration(holdings: Holding[]): ConcentrationReport {
       valueLost: riskOnValue * 0.25,
     });
   }
-
-  // Severity-derived 0–5 risk score for the meter. Each high finding adds 2,
-  // each elevated adds 1, info adds 0. Capped at 5.
-  const riskScore = findings.reduce(
-    (s, f) =>
-      s + (f.severity === "high" ? 2 : f.severity === "elevated" ? 1 : 0),
-    0,
-  );
-  const riskLevel = Math.min(5, riskScore);
 
   const lead = findings[0] ?? null;
   const move: Move | null = lead ? buildMove(lead, largest) : null;

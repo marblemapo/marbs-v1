@@ -4,7 +4,6 @@ import type {
   Finding,
   Move,
   Scenario,
-  Severity,
 } from "@/lib/insights";
 
 type Position = ConcentrationReport["positions"][number];
@@ -43,7 +42,7 @@ export function ConcentrationPanel({ report }: { report: ConcentrationReport }) 
           }}
         />
 
-        <RiskRow level={report.riskLevel} severity={report.headline.severity} />
+        <RiskRow level={report.riskLevel} />
         <Lead headline={report.headline} />
         <FullBriefing report={report} />
       </div>
@@ -71,26 +70,31 @@ function EmptyState() {
 
 // ── Risk profile row (dot + label + 5-segment meter + n/5) ─────
 
-function RiskRow({ level, severity }: { level: number; severity: Severity }) {
+function RiskRow({ level }: { level: number }) {
+  // Tier = label + colors, derived from level. Single source of truth for the
+  // dot, the label text, the glow, and the filled-segment color — so the
+  // meter and label can never disagree (the old "high label · 2/5" bug).
+  const tier: "high" | "elevated" | "low" =
+    level >= 4 ? "high" : level >= 2 ? "elevated" : "low";
   const cfg =
-    severity === "high"
+    tier === "high"
       ? {
-          label: "high",
           dot: "bg-[#FF5000]",
           text: "text-[#FF5000]",
+          fill: "bg-[#FF5000]",
           glow: "rgba(255,80,0,0.45)",
         }
-      : severity === "elevated"
+      : tier === "elevated"
         ? {
-            label: "elevated",
             dot: "bg-gold",
             text: "text-gold",
+            fill: "bg-gold",
             glow: "rgba(245,197,24,0.4)",
           }
         : {
-            label: "low",
             dot: "bg-[#7FFFD4]",
             text: "text-[#7FFFD4]",
+            fill: "bg-[#7FFFD4]",
             glow: "rgba(127,255,212,0.4)",
           };
 
@@ -103,7 +107,7 @@ function RiskRow({ level, severity }: { level: number; severity: Severity }) {
       <span
         className={`font-plex text-[10px] uppercase tracking-[0.18em] font-semibold ${cfg.text}`}
       >
-        Risk profile · {cfg.label}
+        Risk profile · {tier}
       </span>
       <div
         className="flex gap-[3px] ml-auto"
@@ -111,14 +115,10 @@ function RiskRow({ level, severity }: { level: number; severity: Severity }) {
       >
         {Array.from({ length: 5 }, (_, i) => {
           const filled = i < level;
-          // Color rises with index: first 3 segments red, 4th gold, 5th aqua —
-          // a calibrated gradient that hits red early but never goes green.
-          const tone =
-            i < 3 ? "bg-[#FF5000]" : i === 3 ? "bg-gold" : "bg-[#7FFFD4]";
           return (
             <span
               key={i}
-              className={`w-5 h-[5px] rounded-[1px] ${filled ? tone : "bg-white/[0.06]"}`}
+              className={`w-5 h-[5px] rounded-[1px] ${filled ? cfg.fill : "bg-white/[0.06]"}`}
             />
           );
         })}
