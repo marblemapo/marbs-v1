@@ -324,9 +324,14 @@ function TmCell({
         : position.assetClass === "etf"
           ? "text-[#FF8855]"
           : "text-[#7FFFD4]";
+  // Large cell centers its content as a grouped stat card — name + meta + %
+  // sit together in the middle of the cell with symmetric padding above/below.
+  // Small cells use justify-between since their content already fills them.
   return (
     <div
-      className={`relative h-full p-4 rounded-lg border flex flex-col justify-between overflow-hidden ${tint}`}
+      className={`relative h-full p-4 rounded-lg border flex flex-col overflow-hidden ${tint} ${
+        large ? "justify-center gap-3" : "justify-between"
+      }`}
     >
       <div className="min-w-0">
         <div
