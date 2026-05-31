@@ -324,13 +324,14 @@ function TmCell({
         : position.assetClass === "etf"
           ? "text-[#FF8855]"
           : "text-[#7FFFD4]";
-  // Large cell centers its content as a grouped stat card — name + meta + %
-  // sit together in the middle of the cell with symmetric padding above/below.
-  // Small cells use justify-between since their content already fills them.
+  // All cells center their content (name + optional meta + %) as a stat-card
+  // group. Small cells drop the ticker meta to fit comfortably — the cell
+  // border color already signals asset class, and standard treemap convention
+  // is name + % only. Tighter gap on small cells so the group stays compact.
   return (
     <div
-      className={`relative h-full p-4 rounded-lg border flex flex-col overflow-hidden ${tint} ${
-        large ? "justify-center gap-3" : "justify-between"
+      className={`relative h-full p-4 rounded-lg border flex flex-col justify-center overflow-hidden ${tint} ${
+        large ? "gap-3" : "gap-1"
       }`}
     >
       <div className="min-w-0">
@@ -339,7 +340,7 @@ function TmCell({
         >
           {position.name}
         </div>
-        {position.symbol && (
+        {position.symbol && large && (
           <div className="font-plex text-[10px] uppercase tracking-[0.08em] text-text-muted mt-0.5 truncate">
             {position.assetClass} · {position.symbol}
           </div>
