@@ -525,6 +525,69 @@
 }
 
 /* ============================================================
+ * Clarity Overview (spec 2a) — authed shell + glass cards.
+ * Sidebar rail on the left, deeper green canvas than the landing,
+ * glass-card treatment for hero / allocation / holdings blocks.
+ * ========================================================== */
+@layer utilities {
+  /* Authed shell: slightly deeper canvas than the landing so the
+     glass cards read more prominently. */
+  .clarity-shell {
+    min-height: 100vh;
+    color: #ffffff;
+    background:
+      radial-gradient(
+        75% 65% at 8% -10%,
+        rgba(42, 124, 90, 0.42),
+        transparent 58%
+      ),
+      radial-gradient(
+        60% 50% at 100% 8%,
+        rgba(28, 80, 60, 0.22),
+        transparent 60%
+      ),
+      #070e0b;
+  }
+
+  /* Sidebar rail — 78px collapsed, 236px on hover. Labels fade in only
+     while hovered (nothing peeks at 78px). Pure CSS, no React state. */
+  .clarity-rail {
+    width: 78px;
+    background: linear-gradient(
+      180deg,
+      rgba(0, 229, 160, 0.08),
+      rgba(8, 16, 12, 0.5) 42%
+    );
+    border-right: 1px solid rgba(255, 255, 255, 0.06);
+    transition: width 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .clarity-rail:hover {
+    width: 236px;
+  }
+  .clarity-rail-label {
+    opacity: 0;
+    transition: opacity 0.18s ease;
+  }
+  .clarity-rail:hover .clarity-rail-label {
+    opacity: 1;
+    transition: opacity 0.22s ease 0.06s;
+  }
+
+  /* Glass card — the premium finish shared by hero / allocation /
+     invested / holdings blocks. Inset top hairline + soft drop. */
+  .clarity-card {
+    background: rgba(14, 24, 19, 0.62);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 20px;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.07),
+      0 24px 48px -28px rgba(0, 0, 0, 0.7);
+  }
+}
+
+/* ============================================================
  * marbs.io personal site (light-mode island).
  * Dark is the product; these styles only scope to the personal
  * landing / notebook pages.
