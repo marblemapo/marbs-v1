@@ -79,12 +79,12 @@ export function HoldingsTable({ rows }: { rows: HoldingsRow[] }) {
   }
 
   return (
-    <section className="clarity-card px-1 py-1.5">
-      <div className="flex items-center justify-between px-[22px] pt-4 pb-3">
-        <span className="font-display font-bold text-base text-white">
+    <section className="clarity-card max-md:bg-transparent max-md:border-0 max-md:shadow-none max-md:[backdrop-filter:none] max-md:rounded-none px-0 md:px-1 py-0 md:py-1.5">
+      <div className="flex items-center justify-between px-1 md:px-[22px] pt-0 md:pt-4 pb-3">
+        <span className="font-display font-bold text-[17px] md:text-base text-white">
           Holdings
         </span>
-        <span className="text-[13px] text-[#7d8085]">
+        <span className="text-[13px] text-[#00E5A0] md:text-[#7d8085] font-semibold md:font-normal">
           {enriched.length} asset{enriched.length === 1 ? "" : "s"}
         </span>
       </div>
@@ -120,90 +120,100 @@ export function HoldingsTable({ rows }: { rows: HoldingsRow[] }) {
               ? "#00E5A0"
               : "#FF5000";
         const isLast = idx === enriched.length - 1;
-        return (
-          <div
-            key={r.id}
-            className={`md:grid flex flex-col gap-2 items-start md:items-center px-[22px] py-4 ${
-              !isLast ? "border-b border-white/[0.05]" : ""
-            }`}
-            style={{ gridTemplateColumns: COLS }}
+
+        const iconTile = (
+          <span
+            className="w-10 h-10 md:w-9 md:h-9 shrink-0 rounded-[12px] md:rounded-[11px] flex items-center justify-center font-display font-bold text-[15px] md:text-[13px] overflow-hidden"
+            style={{ background: cls.bg, color: cls.color }}
           >
-            {/* Asset */}
-            <span className="flex items-center gap-3 min-w-0">
-              <span
-                className="w-9 h-9 shrink-0 rounded-[11px] flex items-center justify-center font-display font-bold text-[13px] overflow-hidden"
-                style={{ background: cls.bg, color: cls.color }}
-              >
-                {r.logo ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={r.logo}
-                    alt=""
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  (r.symbol ?? r.name).slice(0, 3).toUpperCase()
-                )}
-              </span>
-              <span className="min-w-0">
-                <span className="block text-sm font-semibold text-white truncate">
-                  {r.name}
-                </span>
-                <span className="block text-[12px] text-[#7d8085] font-mono">
-                  {r.symbol ?? r.asset_class}
-                </span>
-              </span>
-            </span>
-            {/* Price */}
-            <span className="md:text-right font-display font-bold text-white tabular-nums">
-              <span className="md:hidden text-[11px] font-normal text-[#7d8085] mr-2">
-                Price
-              </span>
-              {r.priceDisp != null ? fmtMoney(r.priceDisp, currency) : "—"}
-            </span>
-            {/* Holdings (qty) */}
-            <span className="md:text-right font-mono text-[13px] text-[#c3c5c9]">
-              <span className="md:hidden text-[11px] text-[#7d8085] mr-2">
-                Qty
-              </span>
-              {fmtQty(r.latest_quantity)}
-            </span>
-            {/* Today % */}
-            <span
-              className="md:text-right font-semibold tabular-nums"
-              style={{ color: todayColor }}
-            >
-              <span className="md:hidden text-[11px] font-normal text-[#7d8085] mr-2">
-                Today
-              </span>
-              {r.todayPct != null
-                ? `${r.todayPct >= 0 ? "+" : ""}${r.todayPct.toFixed(1)}%`
-                : "—"}
-            </span>
-            {/* Value */}
-            <span className="md:text-right font-display font-bold text-white tabular-nums">
-              <span className="md:hidden text-[11px] font-normal text-[#7d8085] mr-2">
-                Value
-              </span>
-              {r.cur != null ? fmtMoney(r.cur, currency) : "—"}
-            </span>
-            {/* 7d sparkline */}
-            <span className="md:text-right">
-              <svg
-                width="60"
-                height="24"
-                viewBox="0 0 60 24"
-                className="inline-block"
-                aria-hidden
-              >
-                <path
-                  d={sparkPath}
-                  fill="none"
-                  stroke={sparkColor}
-                  strokeWidth="2"
-                />
+            {r.logo ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={r.logo}
+                alt=""
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              (r.symbol ?? r.name).slice(0, 3).toUpperCase()
+            )}
+          </span>
+        );
+
+        return (
+          <div key={r.id}>
+            {/* Mobile card row */}
+            <div className="flex md:hidden items-center gap-[13px] px-4 py-[14px] rounded-[20px] bg-[#141618] mb-[10px]">
+              {iconTile}
+              <div className="flex-1 min-w-0">
+                <div className="text-[15px] font-semibold text-white truncate">{r.name}</div>
+                <div className="text-[12px] text-[#7d8085] font-mono">{r.symbol ?? r.asset_class}</div>
+              </div>
+              <svg width="46" height="22" viewBox="0 0 46 22" className="shrink-0" aria-hidden>
+                <path d={sparkPath} fill="none" stroke={sparkColor} strokeWidth="2" />
               </svg>
-            </span>
+              <div className="text-right min-w-[74px]">
+                <div className="font-display font-bold text-white text-[15px] tabular-nums">
+                  {r.cur != null ? fmtMoney(r.cur, currency) : "—"}
+                </div>
+                <div className="text-[12px] tabular-nums" style={{ color: todayColor }}>
+                  {r.todayPct != null
+                    ? `${r.todayPct >= 0 ? "+" : ""}${r.todayPct.toFixed(1)}%`
+                    : "—"}
+                </div>
+              </div>
+            </div>
+            {/* Desktop table row */}
+            <div
+              className={`hidden md:grid items-center px-[22px] py-4 ${
+                !isLast ? "border-b border-white/[0.05]" : ""
+              }`}
+              style={{ gridTemplateColumns: COLS }}
+            >
+              <span className="flex items-center gap-3 min-w-0">
+                {iconTile}
+                <span className="min-w-0">
+                  <span className="block text-sm font-semibold text-white truncate">
+                    {r.name}
+                  </span>
+                  <span className="block text-[12px] text-[#7d8085] font-mono">
+                    {r.symbol ?? r.asset_class}
+                  </span>
+                </span>
+              </span>
+              <span className="text-right font-display font-bold text-white tabular-nums">
+                {r.priceDisp != null ? fmtMoney(r.priceDisp, currency) : "—"}
+              </span>
+              <span className="text-right font-mono text-[13px] text-[#c3c5c9]">
+                {fmtQty(r.latest_quantity)}
+              </span>
+              <span
+                className="text-right font-semibold tabular-nums"
+                style={{ color: todayColor }}
+              >
+                {r.todayPct != null
+                  ? `${r.todayPct >= 0 ? "+" : ""}${r.todayPct.toFixed(1)}%`
+                  : "—"}
+              </span>
+              <span className="text-right font-display font-bold text-white tabular-nums">
+                {r.cur != null ? fmtMoney(r.cur, currency) : "—"}
+              </span>
+              <span className="text-right">
+                <svg
+                  width="60"
+                  height="24"
+                  viewBox="0 0 60 24"
+                  className="inline-block"
+                  aria-hidden
+                >
+                  <path
+                    d={sparkPath}
+                    fill="none"
+                    stroke={sparkColor}
+                    strokeWidth="2"
+                  />
+                </svg>
+              </span>
+            </div>
           </div>
         );
       })}

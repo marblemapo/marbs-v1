@@ -9,6 +9,7 @@ import { NetWorthTrendCard } from "@/components/networth-trend-card";
 import { AllocationCard } from "@/components/clarity/allocation-card";
 import { SummaryCard } from "@/components/clarity/summary-card";
 import { HoldingsTable } from "@/components/clarity/holdings-table";
+import { MobileTabBar } from "@/components/clarity/mobile-tab-bar";
 import { CurrencyProvider } from "@/components/currency-context";
 import { getHoldingsReport } from "@/lib/holdings-report";
 import { backfillUserHistory, recomputeBackfillRange } from "@/lib/net-worth";
@@ -148,13 +149,35 @@ export default async function DashboardPage() {
   return (
     <div className="clarity-shell flex-1 flex font-sans text-white">
       <SidebarRail active="overview" displayName={displayName} />
-      <main className="flex-1 min-w-0 overflow-y-auto px-6 py-6 lg:px-8 lg:py-[26px]">
+      <main className="flex-1 min-w-0 overflow-y-auto px-4 py-4 md:px-6 md:py-6 lg:px-8 lg:py-[26px] pb-[108px] md:pb-6">
         <div className="mx-auto max-w-[1240px]">
-          <OverviewTopbar
-            displayName={displayName}
-            title="Overview"
-            baseCurrency={baseCurrency}
-          />
+          {/* Mobile header: W logo + greeting + LIVE pill */}
+          <div className="flex md:hidden justify-between items-center mb-6">
+            <div className="flex items-center gap-3">
+              <div
+                className="w-9 h-9 rounded-[11px] flex items-center justify-center font-display font-bold text-[#052018]"
+                style={{ background: "linear-gradient(135deg, #00E5A0, #00a877)" }}
+              >
+                W
+              </div>
+              <div>
+                <div className="text-[12px] text-[#7d8085]">Good evening</div>
+                <div className="text-[14px] font-semibold text-white">{displayName}</div>
+              </div>
+            </div>
+            <div className="flex items-center gap-[7px] bg-[#00E5A0]/[0.12] rounded-full px-3 py-1.5">
+              <span className="w-[7px] h-[7px] rounded-full bg-[#00E5A0] clarity-pulseg" />
+              <span className="font-mono text-[11px] text-[#00E5A0] font-medium">LIVE</span>
+            </div>
+          </div>
+          {/* Desktop topbar */}
+          <div className="hidden md:block">
+            <OverviewTopbar
+              displayName={displayName}
+              title="Overview"
+              baseCurrency={baseCurrency}
+            />
+          </div>
           <CurrencyProvider
             baseCurrency={baseCurrency}
             currencies={currencies}
@@ -166,8 +189,8 @@ export default async function DashboardPage() {
                 <NetWorthCard rows={rowsForHero} />
                 <NetWorthTrendCard />
               </div>
-              {/* Right column: allocation + summary */}
-              <div className="flex flex-col gap-5">
+              {/* Right column: allocation + summary (hidden on mobile — allocation shows as strip below) */}
+              <div className="hidden lg:flex flex-col gap-5">
                 <AllocationCard holdings={holdings} />
                 <SummaryCard
                   rows={rowsWithValue}
@@ -175,10 +198,15 @@ export default async function DashboardPage() {
                 />
               </div>
             </div>
+            {/* Mobile allocation strip */}
+            <div className="lg:hidden mb-5">
+              <AllocationCard holdings={holdings} />
+            </div>
             <HoldingsTable rows={rowsWithValue} />
           </CurrencyProvider>
         </div>
       </main>
+      <MobileTabBar baseCurrency={baseCurrency} />
     </div>
   );
 }

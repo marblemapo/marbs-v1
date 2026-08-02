@@ -133,18 +133,22 @@ export function NetWorthCard({ rows }: { rows: Row[] }) {
   const deltaColor = isPositive ? "#00E5A0" : "#FF5000";
 
   return (
-    <section className="clarity-card p-7">
+    <section className="clarity-card max-md:bg-transparent max-md:border-0 max-md:shadow-none max-md:[backdrop-filter:none] max-md:rounded-none p-0 md:p-7">
       <div className="flex justify-between items-start gap-4 flex-wrap">
         <div className="min-w-0">
-          {/* Live label */}
-          <div className="flex items-center gap-2 mb-3">
+          {/* Mobile: "Total net worth" mono label */}
+          <div className="md:hidden font-mono text-[11px] tracking-[0.16em] uppercase text-[#7d8085] mb-[10px]">
+            Total net worth
+          </div>
+          {/* Desktop: Live label */}
+          <div className="hidden md:flex items-center gap-2 mb-3">
             <span className="w-1.5 h-1.5 rounded-full bg-[#00E5A0] clarity-pulseg" />
             <span className="font-mono text-[11px] tracking-[0.16em] uppercase text-[#8a8d92]">
               Net worth · Live
             </span>
           </div>
-          {/* Big number */}
-          <div className="font-display font-bold text-[36px] sm:text-[40px] md:text-[44px] text-white tracking-[-0.02em] leading-[0.95] tabular-nums">
+          {/* Big number — 46px mobile, 44px desktop */}
+          <div className="font-display font-bold text-[46px] sm:text-[40px] md:text-[44px] text-white tracking-[-0.03em] md:tracking-[-0.02em] leading-[0.95] tabular-nums">
             {whole}
             {cents && (
               <span className="text-[#4a4d52] text-[28px]">{cents}</span>
@@ -185,7 +189,7 @@ export function NetWorthCard({ rows }: { rows: Row[] }) {
         </div>
         {/* Currency toggle */}
         {currencies.length > 1 && (
-          <div className="flex gap-1 bg-black/[0.28] border border-white/[0.08] rounded-full p-1 shrink-0">
+          <div className="hidden md:flex gap-1 bg-black/[0.28] border border-white/[0.08] rounded-full p-1 shrink-0">
             {currencies.map((c) => (
               <button
                 key={c}

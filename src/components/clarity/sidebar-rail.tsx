@@ -37,7 +37,7 @@ export function SidebarRail({
   const initial = (displayName || "?").slice(0, 1).toUpperCase();
 
   return (
-    <aside className="clarity-rail flex-shrink-0 overflow-hidden flex flex-col py-[22px] px-[15px] whitespace-nowrap">
+    <aside className="clarity-rail flex-shrink-0 overflow-hidden hidden md:flex flex-col py-[22px] px-[15px] whitespace-nowrap">
       {/* Wordmark */}
       <div className="flex items-center gap-[14px] pl-0.5 pb-[30px]">
         <div

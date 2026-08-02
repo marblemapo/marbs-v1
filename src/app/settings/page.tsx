@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { SidebarRail } from "@/components/clarity/sidebar-rail";
+import { MobileTabBar } from "@/components/clarity/mobile-tab-bar";
 import { DangerZone } from "@/components/danger-zone";
 
 // Placeholder Settings surface — currently just houses DangerZone (the delete-
@@ -27,10 +28,10 @@ export default async function SettingsPage() {
   return (
     <div className="clarity-shell flex-1 flex font-sans text-white">
       <SidebarRail active="settings" displayName={displayName} />
-      <main className="flex-1 min-w-0 overflow-y-auto px-6 py-6 lg:px-8 lg:py-[26px]">
+      <main className="flex-1 min-w-0 overflow-y-auto px-4 py-4 md:px-6 md:py-6 lg:px-8 lg:py-[26px] pb-[108px] md:pb-6">
         <div className="mx-auto max-w-[900px]">
           <header className="mb-8">
-            <div className="text-[13px] text-[#7d8085]">Account</div>
+            <div className="hidden md:block text-[13px] text-[#7d8085]">Account</div>
             <div className="font-display font-bold text-[22px] text-white">
               Settings
             </div>
@@ -38,6 +39,7 @@ export default async function SettingsPage() {
           {user.email && <DangerZone email={user.email} />}
         </div>
       </main>
+      <MobileTabBar baseCurrency="USD" />
     </div>
   );
 }
