@@ -27,7 +27,7 @@ const CLASSES: { id: UiClass; label: string; hint: string }[] = [
   { id: "cash", label: "Cash", hint: "Bank, savings, money market" },
 ];
 
-export function AddAssetDrawer({ baseCurrency = "USD" }: { baseCurrency?: string }) {
+export function AddAssetDrawer({ baseCurrency = "USD", fabMode }: { baseCurrency?: string; fabMode?: boolean }) {
   const [open, setOpen] = useState(false);
   const [walletOpen, setWalletOpen] = useState(false);
   const [uiClass, setUiClass] = useState<UiClass>("stock");
@@ -134,10 +134,12 @@ export function AddAssetDrawer({ baseCurrency = "USD" }: { baseCurrency?: string
     >
       <SheetTrigger
         className={cn(
-          "inline-flex items-center gap-1.5 h-9 px-3.5 rounded-lg bg-primary text-primary-foreground font-semibold text-sm hover:bg-primary/80 transition-colors",
+          fabMode
+            ? "clarity-fab"
+            : "inline-flex items-center gap-1.5 h-9 px-3.5 rounded-lg bg-primary text-primary-foreground font-semibold text-sm hover:bg-primary/80 transition-colors",
         )}
       >
-        + Add asset
+        {fabMode ? "+" : "+ Add asset"}
       </SheetTrigger>
 
       <SheetContent side="right" className="f3-theme w-full sm:max-w-[440px] flex flex-col gap-0 p-0 border-l border-white/[0.08]">
