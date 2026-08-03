@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { SidebarRail } from "@/components/clarity/sidebar-rail";
-import { MobileTabBar } from "@/components/clarity/mobile-tab-bar";
 import { ConcentrationPanel } from "@/components/concentration-panel";
 import { getHoldingsReport } from "@/lib/holdings-report";
 
@@ -34,7 +33,7 @@ export default async function InsightsPage() {
   return (
     <div className="clarity-shell flex-1 flex font-sans text-white">
       <SidebarRail active="insights" displayName={displayName} />
-      <main className="flex-1 min-w-0 overflow-y-auto px-4 py-4 md:px-6 md:py-6 lg:px-8 lg:py-[26px] pb-[108px] md:pb-6">
+      <main className="flex-1 min-w-0 overflow-y-auto px-4 py-4 md:px-6 md:py-6 lg:px-8 lg:py-[26px] pb-6">
         <div className="mx-auto max-w-[1000px]">
           <header className="mb-8">
             <div className="hidden md:block text-[13px] text-[#7d8085]">Portfolio</div>
@@ -45,7 +44,6 @@ export default async function InsightsPage() {
           <ConcentrationPanel report={report.concentration} />
         </div>
       </main>
-      <MobileTabBar baseCurrency={report.baseCurrency} />
     </div>
   );
 }

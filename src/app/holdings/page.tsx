@@ -2,7 +2,6 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { SidebarRail } from "@/components/clarity/sidebar-rail";
 import { HoldingsTable } from "@/components/clarity/holdings-table";
-import { MobileTabBar } from "@/components/clarity/mobile-tab-bar";
 import { CurrencyProvider } from "@/components/currency-context";
 import { getHoldingsReport } from "@/lib/holdings-report";
 import { AddAssetDrawer } from "@/components/add-asset-drawer";
@@ -33,7 +32,7 @@ export default async function HoldingsPage() {
   return (
     <div className="clarity-shell flex-1 flex font-sans text-white">
       <SidebarRail active="holdings" displayName={displayName} />
-      <main className="flex-1 min-w-0 overflow-y-auto px-4 py-4 md:px-6 md:py-6 lg:px-8 lg:py-[26px] pb-[108px] md:pb-6">
+      <main className="flex-1 min-w-0 overflow-y-auto px-4 py-4 md:px-6 md:py-6 lg:px-8 lg:py-[26px] pb-6">
         <div className="mx-auto max-w-[1240px]">
           {/* Mobile header */}
           <div className="flex md:hidden items-center justify-between mb-5">
@@ -57,7 +56,6 @@ export default async function HoldingsPage() {
           </CurrencyProvider>
         </div>
       </main>
-      <MobileTabBar baseCurrency={baseCurrency} />
     </div>
   );
 }

@@ -83,76 +83,8 @@ export async function WealthLanding() {
           </div>
         </div>
 
-        {/* STATS ROW — full-width 3-cell bar */}
-        <div
-          className="mt-auto lg:mt-[40px] grid grid-cols-1 sm:grid-cols-3 rounded-[18px] overflow-hidden border border-white/[0.07]"
-          style={{ background: "rgba(10,16,13,0.5)" }}
-        >
-          <StatCell
-            label="Net worth"
-            value="$2,184,729.84"
-            cta={signedIn ? null : "Add your first asset →"}
-            href="/login"
-          />
-          <StatCell
-            label="Today"
-            value="+$18,429.52"
-            valueClassName="text-[#00E5A0]"
-            cta={signedIn ? null : "See live movement →"}
-            href="/login"
-            withBorder
-          />
-          <StatCell
-            label="Assets"
-            value="12"
-            cta={signedIn ? null : "Start tracking →"}
-            href="/login"
-          />
-        </div>
       </div>
     </main>
   );
 }
 
-function StatCell({
-  label,
-  value,
-  valueClassName = "text-white",
-  cta,
-  href,
-  withBorder = false,
-}: {
-  label: string;
-  value: string;
-  valueClassName?: string;
-  cta: string | null;
-  href: string;
-  withBorder?: boolean;
-}) {
-  return (
-    <div
-      className={`px-[22px] py-[20px] lg:px-[26px] lg:py-[22px] ${
-        withBorder
-          ? "sm:border-l sm:border-r sm:border-white/[0.07] border-t sm:border-t-0 border-white/[0.07]"
-          : "border-t sm:border-t-0 border-white/[0.07] first:border-t-0"
-      }`}
-    >
-      <div className="font-mono text-[11px] tracking-[0.14em] uppercase text-[#7d8085] mb-[10px]">
-        {label}
-      </div>
-      <div
-        className={`font-display font-bold text-[22px] lg:text-[26px] tabular-nums ${valueClassName}`}
-      >
-        {value}
-      </div>
-      {cta && (
-        <Link
-          href={href}
-          className="inline-block font-mono text-[12px] text-[#00E5A0] mt-[8px] hover:opacity-80 transition-opacity"
-        >
-          {cta}
-        </Link>
-      )}
-    </div>
-  );
-}

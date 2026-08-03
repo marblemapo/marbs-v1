@@ -92,7 +92,7 @@ export function SidebarRail({
         })}
       </nav>
 
-      {/* Footer: Live prices indicator + account pill */}
+      {/* Footer: Live prices indicator + account pill + sign out */}
       <div className="mt-auto flex flex-col gap-3">
         <div className="flex items-center gap-4 py-[11px] px-3 rounded-xl bg-[#00E5A0]/[0.08]">
           <span className="w-[22px] shrink-0 flex justify-center">
@@ -115,6 +115,15 @@ export function SidebarRail({
             </span>
           </span>
         </div>
+        <form action="/auth/signout" method="POST">
+          <button
+            type="submit"
+            className="flex items-center gap-4 w-full p-3 rounded-[14px] text-[#8a8d92] hover:text-white hover:bg-white/[0.04] transition-colors"
+          >
+            <span className="w-[22px] shrink-0 text-center text-[17px] text-[#6f7a74]">↩</span>
+            <span className="clarity-rail-label text-sm font-semibold">Sign out</span>
+          </button>
+        </form>
       </div>
     </aside>
   );
