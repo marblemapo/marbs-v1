@@ -2,7 +2,13 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 // Paths that require a signed-in user. All subpaths are protected too.
-const PROTECTED_PREFIXES = ["/dashboard", "/onboarding"];
+const PROTECTED_PREFIXES = [
+  "/dashboard",
+  "/holdings",
+  "/insights",
+  "/settings",
+  "/onboarding",
+];
 
 // Paths that only make sense when logged OUT. Signed-in visitors are bounced
 // to the dashboard.
@@ -41,10 +47,14 @@ export async function updateSession(request: NextRequest) {
     },
   );
 
-  // Touch the session to refresh it if needed.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // Touch the session to refresh it if needed. getClaims() refreshes an
+  // expired session like getUser() does, but verifies the JWT locally when
+  // the project uses asymmetric signing keys instead of calling Supabase Auth
+  // on every request (it falls back to getUser() with legacy symmetric keys).
+  // This runs before every page render, so it was a fixed round-trip on each
+  // navigation.
+  const { data: claimsData } = await supabase.auth.getClaims();
+  const user = claimsData?.claims?.sub ? claimsData.claims : null;
 
   const { pathname } = request.nextUrl;
   const isProtected = PROTECTED_PREFIXES.some((p) => pathname.startsWith(p));

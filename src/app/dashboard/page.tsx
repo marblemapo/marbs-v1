@@ -1,7 +1,8 @@
 import { redirect } from "next/navigation";
 import { after } from "next/server";
-import { createClient } from "@/lib/supabase/server";
-import { refreshMissingLogos } from "@/app/actions/assets";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { getSessionUser, getProfile, displayNameFor } from "@/lib/session";
+import { backfillMissingLogos } from "@/lib/logos";
 import { SidebarRail } from "@/components/clarity/sidebar-rail";
 import { OverviewTopbar } from "@/components/clarity/overview-topbar";
 import { NetWorthCard } from "@/components/clarity/net-worth-card";
@@ -30,110 +31,23 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 export default async function DashboardPage() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getSessionUser();
   if (!user) redirect("/login");
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("display_name")
-    .eq("id", user.id)
-    .single();
-  const displayName =
-    profile?.display_name || user.email?.split("@")[0] || "You";
-
-  const report = await getHoldingsReport();
+  // getProfile is memoised per request, so this and getHoldingsReport()
+  // share one query; both run concurrently.
+  const [profile, report] = await Promise.all([
+    getProfile(user.id),
+    getHoldingsReport(),
+  ]);
   if (!report) redirect("/login");
+  const displayName = displayNameFor(user, profile);
 
-  // --- Post-response backfill triggers (unchanged from prior dashboard) ---
-  const { data: assetsForChecks } = await supabase
-    .from("assets")
-    .select("id, external_id, price_source, asset_class, symbol, metadata");
-
-  const missingLogo = (assetsForChecks ?? []).some((a) => {
-    if (a.asset_class !== "equity" && a.asset_class !== "etf") return false;
-    const meta = (a.metadata ?? {}) as Record<string, unknown>;
-    return !meta.logo || typeof meta.logo !== "string";
-  });
-  if (missingLogo) {
-    after(async () => {
-      const res = await refreshMissingLogos();
-      if (res.ok && res.updated > 0) {
-        console.log(`[dashboard] backfilled ${res.updated} asset logo(s)`);
-      }
-    });
-  }
-
-  if ((assetsForChecks ?? []).length > 0) {
-    const pricedAssets = (assetsForChecks ?? []).filter(
-      (a) =>
-        a.external_id &&
-        a.price_source !== "manual" &&
-        a.asset_class !== "cash",
-    );
-    const historyChecks = await Promise.all(
-      pricedAssets.map(async (a) => {
-        const { count } = await supabase
-          .from("price_history")
-          .select("*", { count: "exact", head: true })
-          .eq("external_id", a.external_id!)
-          .eq("source", a.price_source);
-        const symbol = (a.symbol ?? "").toUpperCase();
-        const needsStockRetry =
-          (a.asset_class === "equity" || a.asset_class === "etf") &&
-          (count ?? 0) < 1000;
-        const needsMajorCryptoRetry =
-          a.asset_class === "crypto" &&
-          ["BTC", "BTC-USD", "BNB", "BNB-USD", "ETH", "ETH-USD"].includes(
-            symbol,
-          ) &&
-          (count ?? 0) < 1000;
-        return (count ?? 0) === 0 || needsStockRetry || needsMajorCryptoRetry;
-      }),
-    );
-    const hasSparsePriceHistory = historyChecks.some(Boolean);
-
-    const { count: backfilledCount } = await supabase
-      .from("net_worth_snapshots")
-      .select("*", { count: "exact", head: true })
-      .eq("user_id", user.id)
-      .eq("is_backfilled", true);
-    if ((backfilledCount ?? 0) < 30 || hasSparsePriceHistory) {
-      after(() => backfillUserHistory(user.id));
-    } else {
-      const { data: recentSnaps } = await supabase
-        .from("net_worth_snapshots")
-        .select("total_usd, coverage_pct, breakdown_usd")
-        .eq("user_id", user.id)
-        .eq("is_backfilled", true)
-        .order("snapshot_date", { ascending: false })
-        .limit(10);
-      const isOldQualityModel =
-        (recentSnaps ?? []).length >= 5 &&
-        (recentSnaps ?? []).every((s) => {
-          const breakdown = s.breakdown_usd;
-          return !(
-            breakdown &&
-            typeof breakdown === "object" &&
-            "_meta" in breakdown
-          );
-        });
-      const isBadBackfill =
-        (recentSnaps ?? []).length >= 5 &&
-        (recentSnaps ?? []).every(
-          (s) => Number(s.total_usd) <= 0 || Number(s.coverage_pct) <= 0,
-        );
-      const hasLowCoverageBackfill =
-        (recentSnaps ?? []).length >= 5 &&
-        (recentSnaps ?? []).every((s) => Number(s.coverage_pct) < 0.7);
-      if (isOldQualityModel) after(() => recomputeBackfillRange(user.id));
-      else if (isBadBackfill) after(() => recomputeBackfillRange(user.id));
-      else if (hasLowCoverageBackfill)
-        after(() => recomputeBackfillRange(user.id));
-    }
-  }
+  // Backfill triggers (logos + history). These only decide whether to kick
+  // off background work, so they no longer block the render: previously
+  // ~4 + N(assets) queries ran here before any HTML was sent.
+  const userId = user.id;
+  after(() => runBackfillChecks(userId));
 
   const { baseCurrency, currencies, fxRates, rowsWithValue, holdings } =
     report;
@@ -202,4 +116,109 @@ export default async function DashboardPage() {
       </main>
     </div>
   );
+}
+
+/**
+ * Decides whether this user needs a logo refresh or a history backfill /
+ * recompute, and runs it. Called from after(), so it uses the admin client
+ * (request cookies aren't readable inside after() in a Server Component) with
+ * an explicit user_id filter in place of RLS.
+ */
+async function runBackfillChecks(userId: string): Promise<void> {
+  const admin = createAdminClient();
+  const { data: assetsForChecks } = await admin
+    .from("assets")
+    .select("id, external_id, price_source, asset_class, symbol, metadata")
+    .eq("user_id", userId);
+  const assets = assetsForChecks ?? [];
+
+  const missingLogo = assets.some((a) => {
+    if (a.asset_class !== "equity" && a.asset_class !== "etf") return false;
+    const meta = (a.metadata ?? {}) as Record<string, unknown>;
+    return !meta.logo || typeof meta.logo !== "string";
+  });
+
+  const tasks: Promise<unknown>[] = [];
+  if (missingLogo) {
+    tasks.push(
+      backfillMissingLogos(userId).then((res) => {
+        if (res.ok && res.updated > 0) {
+          console.log(`[dashboard] backfilled ${res.updated} asset logo(s)`);
+        }
+      }),
+    );
+  }
+
+  if (assets.length === 0) {
+    await Promise.all(tasks);
+    return;
+  }
+
+  const pricedAssets = assets.filter(
+    (a) =>
+      a.external_id && a.price_source !== "manual" && a.asset_class !== "cash",
+  );
+  const historyChecks = await Promise.all(
+    pricedAssets.map(async (a) => {
+      const { count } = await admin
+        .from("price_history")
+        .select("*", { count: "exact", head: true })
+        .eq("external_id", a.external_id!)
+        .eq("source", a.price_source);
+      const symbol = (a.symbol ?? "").toUpperCase();
+      const needsStockRetry =
+        (a.asset_class === "equity" || a.asset_class === "etf") &&
+        (count ?? 0) < 1000;
+      const needsMajorCryptoRetry =
+        a.asset_class === "crypto" &&
+        ["BTC", "BTC-USD", "BNB", "BNB-USD", "ETH", "ETH-USD"].includes(
+          symbol,
+        ) &&
+        (count ?? 0) < 1000;
+      return (count ?? 0) === 0 || needsStockRetry || needsMajorCryptoRetry;
+    }),
+  );
+  const hasSparsePriceHistory = historyChecks.some(Boolean);
+
+  const { count: backfilledCount } = await admin
+    .from("net_worth_snapshots")
+    .select("*", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .eq("is_backfilled", true);
+
+  if ((backfilledCount ?? 0) < 30 || hasSparsePriceHistory) {
+    tasks.push(backfillUserHistory(userId));
+  } else {
+    const { data: recentSnaps } = await admin
+      .from("net_worth_snapshots")
+      .select("total_usd, coverage_pct, breakdown_usd")
+      .eq("user_id", userId)
+      .eq("is_backfilled", true)
+      .order("snapshot_date", { ascending: false })
+      .limit(10);
+    const snaps = recentSnaps ?? [];
+    const enough = snaps.length >= 5;
+    const isOldQualityModel =
+      enough &&
+      snaps.every((s) => {
+        const breakdown = s.breakdown_usd;
+        return !(
+          breakdown &&
+          typeof breakdown === "object" &&
+          "_meta" in breakdown
+        );
+      });
+    const isBadBackfill =
+      enough &&
+      snaps.every(
+        (s) => Number(s.total_usd) <= 0 || Number(s.coverage_pct) <= 0,
+      );
+    const hasLowCoverageBackfill =
+      enough && snaps.every((s) => Number(s.coverage_pct) < 0.7);
+    if (isOldQualityModel || isBadBackfill || hasLowCoverageBackfill) {
+      tasks.push(recomputeBackfillRange(userId));
+    }
+  }
+
+  await Promise.all(tasks);
 }

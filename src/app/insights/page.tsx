@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { getSessionUser, getProfile, displayNameFor } from "@/lib/session";
 import { SidebarRail } from "@/components/clarity/sidebar-rail";
 import { ConcentrationPanel } from "@/components/concentration-panel";
 import { getHoldingsReport } from "@/lib/holdings-report";
@@ -13,22 +13,16 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 export default async function InsightsPage() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getSessionUser();
   if (!user) redirect("/login");
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("display_name")
-    .eq("id", user.id)
-    .single();
-  const displayName =
-    profile?.display_name || user.email?.split("@")[0] || "You";
-
-  const report = await getHoldingsReport();
+  // Profile is memoised per request and shared with getHoldingsReport().
+  const [profile, report] = await Promise.all([
+    getProfile(user.id),
+    getHoldingsReport(),
+  ]);
   if (!report) redirect("/login");
+  const displayName = displayNameFor(user, profile);
 
   return (
     <div className="clarity-shell flex-1 flex font-sans text-white">

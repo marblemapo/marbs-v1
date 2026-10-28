@@ -1,5 +1,7 @@
 import "server-only";
+import { after } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { getSessionUser, getProfile } from "@/lib/session";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { fetchFxRates, convertFx } from "@/lib/fx";
 import { fetchPrice } from "@/lib/prices";
@@ -38,41 +40,63 @@ export type HoldingsReport = {
  * Returns `null` when no user is signed in — callers should redirect to /login.
  */
 export async function getHoldingsReport(): Promise<HoldingsReport | null> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getSessionUser();
   if (!user) return null;
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("base_currency")
-    .eq("id", user.id)
-    .single();
+  const supabase = await createClient();
+
+  // Profile and assets don't depend on each other — fetch together.
+  const [profile, { data: assets }] = await Promise.all([
+    getProfile(user.id),
+    supabase
+      .from("assets")
+      .select(
+        "id, name, symbol, asset_class, native_currency, price_source, external_id, metadata, wallet_id",
+      )
+      .order("created_at", { ascending: false }),
+  ]);
   const baseCurrency = profile?.base_currency ?? "USD";
 
-  const { data: assets } = await supabase
-    .from("assets")
-    .select(
-      "id, name, symbol, asset_class, native_currency, price_source, external_id, metadata, wallet_id",
-    )
-    .order("created_at", { ascending: false });
-
   const assetIds = (assets ?? []).map((a) => a.id);
+  const priceKeys = (assets ?? [])
+    .filter((a) => a.external_id && a.price_source !== "manual")
+    .map((a) => ({ external_id: a.external_id!, source: a.price_source }));
 
-  const { data: snapshots } = assetIds.length
-    ? await supabase
-        .from("balance_snapshots")
-        .select("asset_id, quantity, snapshot_at")
-        .in("asset_id", assetIds)
-        .order("snapshot_at", { ascending: false })
-    : {
-        data: [] as {
-          asset_id: string;
-          quantity: number;
-          snapshot_at: string;
-        }[],
-      };
+  // Snapshots and cached prices are independent — fetch together.
+  const [{ data: snapshots }, { data: prices }] = await Promise.all([
+    assetIds.length
+      ? supabase
+          .from("balance_snapshots")
+          .select("asset_id, quantity, snapshot_at")
+          .in("asset_id", assetIds)
+          .order("snapshot_at", { ascending: false })
+      : Promise.resolve({
+          data: [] as {
+            asset_id: string;
+            quantity: number;
+            snapshot_at: string;
+          }[],
+        }),
+    priceKeys.length
+      ? supabase
+          .from("price_cache")
+          .select(
+            "external_id, source, price_native, previous_native, fetched_at",
+          )
+          .in(
+            "external_id",
+            priceKeys.map((k) => k.external_id),
+          )
+      : Promise.resolve({
+          data: [] as {
+            external_id: string;
+            source: string;
+            price_native: number;
+            previous_native: number | null;
+            fetched_at: string | null;
+          }[],
+        }),
+  ]);
 
   const latestByAsset = new Map<string, number>();
   for (const snap of snapshots ?? []) {
@@ -81,60 +105,60 @@ export async function getHoldingsReport(): Promise<HoldingsReport | null> {
     }
   }
 
-  const priceKeys = (assets ?? [])
-    .filter((a) => a.external_id && a.price_source !== "manual")
-    .map((a) => ({ external_id: a.external_id!, source: a.price_source }));
-
   const priceByKey = new Map<string, number>();
   const previousByKey = new Map<string, number>();
   const fetchedAtByKey = new Map<string, number>();
-  if (priceKeys.length) {
-    const { data: prices } = await supabase
-      .from("price_cache")
-      .select("external_id, source, price_native, previous_native, fetched_at")
-      .in(
-        "external_id",
-        priceKeys.map((k) => k.external_id),
-      );
-    for (const p of prices ?? []) {
-      const key = `${p.external_id}|${p.source}`;
-      priceByKey.set(key, Number(p.price_native));
-      if (p.previous_native != null) {
-        previousByKey.set(key, Number(p.previous_native));
-      }
-      if (p.fetched_at) {
-        fetchedAtByKey.set(key, new Date(p.fetched_at).getTime());
-      }
+  for (const p of prices ?? []) {
+    const key = `${p.external_id}|${p.source}`;
+    priceByKey.set(key, Number(p.price_native));
+    if (p.previous_native != null) {
+      previousByKey.set(key, Number(p.previous_native));
+    }
+    if (p.fetched_at) {
+      fetchedAtByKey.set(key, new Date(p.fetched_at).getTime());
     }
   }
 
-  // Refresh if stale, or if previous_native is missing (backfill path for
-  // rows cached before the TODAY-delta feature shipped).
+  // Price refresh — stale-while-revalidate.
+  //
+  // Before: any price older than 10 min (i.e. nearly every visit) blocked the
+  // whole page on live calls to Yahoo / Finnhub / CoinGecko, so the page was
+  // as slow as the slowest upstream API.
+  //
+  // Now: only assets with NO cached price at all block the render (otherwise
+  // their value would be blank). Stale or delta-less prices render from cache
+  // immediately and are refreshed after the response, so the next load (and
+  // the live ticker) picks up the new values.
   const now = Date.now();
-  const toRefresh = (assets ?? []).filter((a) => {
-    if (!a.external_id || a.price_source === "manual") return false;
+  type RefreshAsset = NonNullable<typeof assets>[number];
+  const missing: RefreshAsset[] = [];
+  const stale: RefreshAsset[] = [];
+  for (const a of assets ?? []) {
+    if (!a.external_id || a.price_source === "manual") continue;
     const key = `${a.external_id}|${a.price_source}`;
+    if (!priceByKey.has(key)) {
+      missing.push(a);
+      continue;
+    }
     const fetchedAt = fetchedAtByKey.get(key);
-    return (
+    if (
       fetchedAt == null ||
       now - fetchedAt > PRICE_TTL_MS ||
       !previousByKey.has(key)
-    );
-  });
+    ) {
+      stale.push(a);
+    }
+  }
 
-  if (toRefresh.length) {
-    const fresh = await Promise.all(
-      toRefresh.map(async (a) => {
-        const quote = await fetchPrice(
-          a.price_source,
-          a.external_id,
-          a.native_currency,
-        );
-        return quote ? { asset: a, quote } : null;
-      }),
-    );
-    const admin = createAdminClient();
-    const upserts = fresh.filter((r): r is NonNullable<typeof r> => r != null);
+  // FX doesn't depend on prices — start it now so it overlaps any blocking
+  // price fetch below.
+  const currencySet = new Set<string>([baseCurrency]);
+  for (const a of assets ?? []) currencySet.add(a.native_currency);
+  const currencies = Array.from(currencySet);
+  const fxPromise = fetchFxRates(baseCurrency, currencies);
+
+  if (missing.length) {
+    const upserts = await refreshPrices(missing);
     for (const { asset, quote } of upserts) {
       const key = `${asset.external_id}|${asset.price_source}`;
       priceByKey.set(key, quote.price);
@@ -142,20 +166,14 @@ export async function getHoldingsReport(): Promise<HoldingsReport | null> {
         previousByKey.set(key, quote.previousClose);
       }
     }
-    if (upserts.length) {
-      await admin.from("price_cache").upsert(
-        upserts.map(({ asset, quote }) => ({
-          external_id: asset.external_id!,
-          source: asset.price_source,
-          price_native: quote.price,
-          previous_native: quote.previousClose,
-          currency: quote.currency,
-          fetched_at: quote.asOf,
-        })),
-        { onConflict: "external_id,source" },
-      );
-    }
   }
+  if (stale.length) {
+    after(async () => {
+      await refreshPrices(stale);
+    });
+  }
+
+  const fxRates = await fxPromise;
 
   const rows: HoldingsRow[] = (assets ?? []).map((a) => {
     const latest_quantity = latestByAsset.get(a.id) ?? null;
@@ -195,10 +213,6 @@ export async function getHoldingsReport(): Promise<HoldingsReport | null> {
     };
   });
 
-  const currencySet = new Set<string>([baseCurrency]);
-  for (const r of rows) currencySet.add(r.native_currency);
-  const currencies = Array.from(currencySet);
-  const fxRates = await fetchFxRates(baseCurrency, currencies);
 
   const baseValue = (r: HoldingsRow): number | null => {
     if (r.value_native == null) return null;
@@ -240,4 +254,40 @@ export async function getHoldingsReport(): Promise<HoldingsReport | null> {
     holdings,
     concentration,
   };
+}
+
+type PriceAsset = {
+  external_id: string | null;
+  price_source: string;
+  native_currency: string;
+};
+
+/** Fetch live quotes for `assets` in parallel and write them to price_cache. */
+async function refreshPrices<A extends PriceAsset>(assets: A[]) {
+  const fresh = await Promise.all(
+    assets.map(async (a) => {
+      const quote = await fetchPrice(
+        a.price_source as Parameters<typeof fetchPrice>[0],
+        a.external_id,
+        a.native_currency,
+      );
+      return quote ? { asset: a, quote } : null;
+    }),
+  );
+  const upserts = fresh.filter((r): r is NonNullable<typeof r> => r != null);
+  if (upserts.length) {
+    const admin = createAdminClient();
+    await admin.from("price_cache").upsert(
+      upserts.map(({ asset, quote }) => ({
+        external_id: asset.external_id!,
+        source: asset.price_source,
+        price_native: quote.price,
+        previous_native: quote.previousClose,
+        currency: quote.currency,
+        fetched_at: quote.asOf,
+      })),
+      { onConflict: "external_id,source" },
+    );
+  }
+  return upserts;
 }
