@@ -431,6 +431,21 @@
     box-shadow: 0 14px 28px -8px rgba(0, 229, 160, 0.72);
   }
 
+  /* Immediate handoff from the landing page to the prefetched dashboard
+     shell. The real loading.tsx uses the same PageSkeleton underneath, so
+     the transition does not flash or jump while the route streams in. */
+  .vault-route-transition {
+    background: #070e0b;
+    animation: vault-route-enter 140ms ease-out both;
+  }
+  @keyframes vault-route-enter {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .vault-route-transition { animation: none; }
+  }
+
   /* Mono privacy chip — bordered pill under the CTA. */
   .clarity-chip {
     display: inline-flex;

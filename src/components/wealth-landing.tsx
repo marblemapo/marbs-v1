@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getSessionUser } from "@/lib/session";
 import { LandingDemo } from "@/components/landing-demo";
+import { VaultLink } from "@/components/vault-link";
 
 // Wealth-tracker marketing page. Served at wealth.marbs.io/.
 // Clarity direction (spec 3a): dark mint-green canvas, two-column hero with
@@ -31,13 +32,18 @@ export async function WealthLanding() {
             >
               Docs
             </a>
-            <Link
-              href={signedIn ? "/dashboard" : "/login"}
-              prefetch={signedIn ? true : null}
-              className="text-[#8a8d92] hover:text-white transition-colors"
-            >
-              {signedIn ? "Dashboard" : "Sign in"}
-            </Link>
+            {signedIn ? (
+              <VaultLink className="text-[#8a8d92] hover:text-white transition-colors">
+                Dashboard
+              </VaultLink>
+            ) : (
+              <Link
+                href="/login"
+                className="text-[#8a8d92] hover:text-white transition-colors"
+              >
+                Sign in
+              </Link>
+            )}
           </div>
         </nav>
 
@@ -55,13 +61,13 @@ export async function WealthLanding() {
               numbers. stocks, crypto, cash. no bank logins, no plaid.
             </p>
             <div className="flex items-center gap-5 mb-[40px] lg:mb-[52px]">
-              <Link
-                href={signedIn ? "/dashboard" : "/login"}
-                prefetch={signedIn ? true : null}
-                className="clarity-cta"
-              >
-                {signedIn ? "Enter vault" : "Sign in"}
-              </Link>
+              {signedIn ? (
+                <VaultLink className="clarity-cta">Enter vault</VaultLink>
+              ) : (
+                <Link href="/login" className="clarity-cta">
+                  Sign in
+                </Link>
+              )}
               <span className="font-mono text-[13px] lg:text-[14px] text-[#8a8d92]">
                 {signedIn
                   ? `signed in as ${user!.email}`
