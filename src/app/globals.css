@@ -586,6 +586,27 @@
       0 24px 48px -28px rgba(0, 0, 0, 0.7);
   }
 
+  /* Skeleton block for loading.tsx states — soft mint shimmer that sits
+     inside .clarity-card without competing with real data. */
+  .clarity-skel {
+    border-radius: 10px;
+    background: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.05) 0%,
+      rgba(0, 229, 160, 0.09) 50%,
+      rgba(255, 255, 255, 0.05) 100%
+    );
+    background-size: 200% 100%;
+    animation: clarity-skel-shimmer 1.4s ease-in-out infinite;
+  }
+  @keyframes clarity-skel-shimmer {
+    0% { background-position: 100% 0; }
+    100% { background-position: -100% 0; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .clarity-skel { animation: none; }
+  }
+
   /* ── Mobile 4a: floating bottom tab bar ── */
   .clarity-tab-bar {
     position: fixed;

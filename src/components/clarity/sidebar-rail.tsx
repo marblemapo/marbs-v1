@@ -34,7 +34,8 @@ export function SidebarRail({
   active: RailItem;
   displayName: string;
 }) {
-  const initial = (displayName || "?").slice(0, 1).toUpperCase();
+  // Empty displayName = loading skeleton: render a blank avatar, not "?".
+  const initial = (displayName || "").slice(0, 1).toUpperCase();
 
   return (
     <aside className="clarity-rail flex-shrink-0 overflow-hidden hidden md:flex flex-col py-[22px] px-[15px] whitespace-nowrap">
