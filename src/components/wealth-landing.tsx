@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/server";
+import { getSessionUser } from "@/lib/session";
 import { LandingDemo } from "@/components/landing-demo";
 
 // Wealth-tracker marketing page. Served at wealth.marbs.io/.
@@ -7,11 +7,7 @@ import { LandingDemo } from "@/components/landing-demo";
 // a self-running product demo on the right, mono voice, big Space Grotesk
 // numbers, full-width 3-cell stats bar at the bottom.
 export async function WealthLanding() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
+  const user = await getSessionUser();
   const signedIn = !!user;
 
   return (
@@ -37,6 +33,7 @@ export async function WealthLanding() {
             </a>
             <Link
               href={signedIn ? "/dashboard" : "/login"}
+              prefetch={signedIn ? true : null}
               className="text-[#8a8d92] hover:text-white transition-colors"
             >
               {signedIn ? "Dashboard" : "Sign in"}
@@ -54,12 +51,13 @@ export async function WealthLanding() {
               <span className="text-[#6FE0B8]">private by default.</span>
             </h1>
             <p className="font-mono text-[14px] lg:text-[16px] text-[#8a8d92] leading-[1.6] mt-[26px] mb-[36px] lg:mb-[40px] max-w-[440px]">
-              <span className="text-[#00E5A0]">//</span> self-custody your
+              <span className="text-[#00E5A0]">{"//"}</span> self-custody your
               numbers. stocks, crypto, cash. no bank logins, no plaid.
             </p>
             <div className="flex items-center gap-5 mb-[40px] lg:mb-[52px]">
               <Link
                 href={signedIn ? "/dashboard" : "/login"}
+                prefetch={signedIn ? true : null}
                 className="clarity-cta"
               >
                 {signedIn ? "Enter vault" : "Sign in"}
@@ -87,4 +85,3 @@ export async function WealthLanding() {
     </main>
   );
 }
-
