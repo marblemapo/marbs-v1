@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -41,21 +42,38 @@ export function EditAssetDrawer({
   asset: EditableAsset | null;
   onClose: () => void;
 }) {
+  const router = useRouter();
   const [quantity, setQuantity] = useState<string>(() =>
     asset?.latest_quantity?.toString() ?? "",
   );
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [pending, startTransition] = useTransition();
+  const nextQuantity = Number(quantity);
+  const currentValue =
+    asset?.latest_quantity != null && asset.latest_price != null
+      ? asset.latest_quantity * asset.latest_price
+      : null;
+  const nextValue =
+    asset?.latest_price != null &&
+    quantity.trim() !== "" &&
+    Number.isFinite(nextQuantity) &&
+    nextQuantity > 0
+      ? nextQuantity * asset.latest_price
+      : null;
+  const valueChange =
+    currentValue != null && nextValue != null ? nextValue - currentValue : null;
 
   // Reset state whenever a different asset is opened.
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (asset) {
       setQuantity(asset.latest_quantity?.toString() ?? "");
       setError(null);
       setConfirmDelete(false);
     }
-  }, [asset?.id]);
+  }, [asset]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   function handleClose() {
     setError(null);
@@ -69,7 +87,7 @@ export function EditAssetDrawer({
     if (!asset) return;
     setError(null);
     const qty = Number(quantity);
-    if (!(qty > 0)) {
+    if (!Number.isFinite(qty) || !(qty > 0)) {
       setError("Quantity must be greater than zero");
       return;
     }
@@ -80,6 +98,7 @@ export function EditAssetDrawer({
         return;
       }
       handleClose();
+      router.refresh();
     });
   }
 
@@ -98,6 +117,7 @@ export function EditAssetDrawer({
         return;
       }
       handleClose();
+      router.refresh();
     });
   }
 
@@ -119,7 +139,7 @@ export function EditAssetDrawer({
         </SheetHeader>
 
         <form onSubmit={handleSave} className="flex flex-col flex-1 gap-5 px-6 pb-6 overflow-y-auto">
-          {/* Current market snapshot — read-only context */}
+          {/* Current market snapshot + live preview of the edited balance. */}
           {asset && (
             <div className="grid grid-cols-2 gap-px bg-border rounded-lg overflow-hidden">
               <div className="bg-surface p-4 flex flex-col gap-0.5">
@@ -136,13 +156,25 @@ export function EditAssetDrawer({
               </div>
               <div className="bg-surface p-4 flex flex-col gap-0.5">
                 <div className="text-[10px] text-text-muted uppercase tracking-wider font-medium">
-                  Current value
+                  New value
                 </div>
                 <div className="font-display text-base font-bold tabular-nums">
-                  {asset.latest_quantity != null && asset.latest_price != null
-                    ? `${asset.native_currency} ${(asset.latest_quantity * asset.latest_price).toLocaleString("en-US", { maximumFractionDigits: 2 })}`
+                  {nextValue != null
+                    ? `${asset.native_currency} ${nextValue.toLocaleString("en-US", { maximumFractionDigits: 2 })}`
                     : "—"}
                 </div>
+                {valueChange != null && Math.abs(valueChange) > 0.000001 && (
+                  <div
+                    className={`text-[11px] tabular-nums ${
+                      valueChange >= 0 ? "text-[#00E5A0]" : "text-[#FF5000]"
+                    }`}
+                  >
+                    {valueChange >= 0 ? "+" : "−"}
+                    {asset.native_currency} {Math.abs(valueChange).toLocaleString("en-US", {
+                      maximumFractionDigits: 2,
+                    })}
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -165,7 +197,7 @@ export function EditAssetDrawer({
               className="h-11 tabular-nums"
             />
             <p className="text-xs text-text-muted">
-              Saved as a new snapshot; history is preserved.
+              Saves a dated balance record and refreshes net worth immediately.
             </p>
           </div>
 
@@ -191,7 +223,7 @@ export function EditAssetDrawer({
               className="h-11 flex-1 font-semibold"
               disabled={pending}
             >
-              {pending ? "Saving…" : "Save"}
+              {pending ? "Saving…" : "Save changes"}
             </Button>
           </div>
 

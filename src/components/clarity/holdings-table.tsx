@@ -1,8 +1,12 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { convertFx } from "@/lib/fx";
 import { useCurrency } from "@/components/currency-context";
+import {
+  EditAssetDrawer,
+  type EditableAsset,
+} from "@/components/edit-asset-drawer";
 import type { HoldingsRow } from "@/lib/holdings-report";
 
 // Clarity Holdings table (spec 2a bottom section) — 6-column grid with per-row
@@ -46,6 +50,7 @@ function fmtQty(qty: number | null) {
 }
 
 export function HoldingsTable({ rows }: { rows: HoldingsRow[] }) {
+  const [editing, setEditing] = useState<EditableAsset | null>(null);
   const { currency, fxRates } = useCurrency();
 
   const enriched = useMemo(() => {
@@ -79,7 +84,8 @@ export function HoldingsTable({ rows }: { rows: HoldingsRow[] }) {
   }
 
   return (
-    <section className="clarity-card max-md:bg-transparent max-md:border-0 max-md:shadow-none max-md:[backdrop-filter:none] max-md:rounded-none px-0 md:px-1 py-0 md:py-1.5">
+    <>
+      <section className="clarity-card max-md:bg-transparent max-md:border-0 max-md:shadow-none max-md:[backdrop-filter:none] max-md:rounded-none px-0 md:px-1 py-0 md:py-1.5">
       <div className="flex items-center justify-between px-1 md:px-[22px] pt-0 md:pt-4 pb-3">
         <span className="font-display font-bold text-[17px] md:text-base text-white">
           Holdings
@@ -142,7 +148,12 @@ export function HoldingsTable({ rows }: { rows: HoldingsRow[] }) {
         return (
           <div key={r.id}>
             {/* Mobile card row */}
-            <div className="flex md:hidden items-center gap-[13px] px-4 py-[14px] rounded-[20px] bg-[#141618] mb-[10px]">
+            <button
+              type="button"
+              onClick={() => setEditing(r)}
+              aria-label={`Edit ${r.name}`}
+              className="flex md:hidden items-center gap-[13px] w-full px-4 py-[14px] rounded-[20px] bg-[#141618] hover:bg-[#1a1d1b] active:scale-[0.99] transition-[background-color,transform] mb-[10px] text-left cursor-pointer"
+            >
               {iconTile}
               <div className="flex-1 min-w-0">
                 <div className="text-[15px] font-semibold text-white truncate">{r.name}</div>
@@ -161,10 +172,14 @@ export function HoldingsTable({ rows }: { rows: HoldingsRow[] }) {
                     : "—"}
                 </div>
               </div>
-            </div>
+              <span className="text-[#59615d] text-lg" aria-hidden>›</span>
+            </button>
             {/* Desktop table row */}
-            <div
-              className={`hidden md:grid items-center px-[22px] py-4 ${
+            <button
+              type="button"
+              onClick={() => setEditing(r)}
+              aria-label={`Edit ${r.name}`}
+              className={`hidden md:grid items-center w-full px-[22px] py-4 text-left hover:bg-white/[0.025] focus-visible:bg-white/[0.04] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-[#00E5A0]/50 transition-colors cursor-pointer ${
                 !isLast ? "border-b border-white/[0.05]" : ""
               }`}
               style={{ gridTemplateColumns: COLS }}
@@ -213,10 +228,12 @@ export function HoldingsTable({ rows }: { rows: HoldingsRow[] }) {
                   />
                 </svg>
               </span>
-            </div>
+            </button>
           </div>
         );
       })}
-    </section>
+      </section>
+      <EditAssetDrawer asset={editing} onClose={() => setEditing(null)} />
+    </>
   );
 }
