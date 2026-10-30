@@ -39,6 +39,12 @@ export type AddAssetResult =
 
 export type MutateResult = { ok: true } | { ok: false; error: string };
 
+function revalidatePortfolioPages() {
+  revalidatePath("/dashboard");
+  revalidatePath("/holdings");
+  revalidatePath("/insights");
+}
+
 /**
  * Append a new balance_snapshots row with the user's updated quantity. We
  * don't mutate historical snapshots — dashboard always reads the latest.
@@ -57,22 +63,57 @@ export async function updateAssetQuantity(
   } = await supabase.auth.getUser();
   if (!user) return { ok: false, error: "Not signed in" };
 
-  if (!(quantity > 0))
+  if (!Number.isFinite(quantity) || !(quantity > 0))
     return { ok: false, error: "Quantity must be greater than zero" };
+
+  // Read through the authenticated client so RLS verifies ownership before we
+  // append the new balance record. Keeping the previous value in `notes`
+  // makes each manual adjustment self-describing for the future Activity UI.
+  const { data: asset, error: assetError } = await supabase
+    .from("assets")
+    .select("id")
+    .eq("id", assetId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (assetError) return { ok: false, error: assetError.message };
+  if (!asset) return { ok: false, error: "Holding not found" };
+
+  const { data: latestSnapshot, error: latestError } = await supabase
+    .from("balance_snapshots")
+    .select("quantity")
+    .eq("asset_id", assetId)
+    .order("snapshot_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (latestError) return { ok: false, error: latestError.message };
+
+  const previousQuantity =
+    latestSnapshot?.quantity == null ? null : Number(latestSnapshot.quantity);
+  if (previousQuantity === quantity) {
+    return { ok: false, error: "Enter a different quantity to save a change" };
+  }
 
   const { error } = await supabase.from("balance_snapshots").insert({
     asset_id: assetId,
     quantity,
     source: "manual",
+    notes:
+      previousQuantity == null
+        ? `Manual balance set to ${quantity}`
+        : `Manual balance changed from ${previousQuantity} to ${quantity}`,
   });
 
   if (error) return { ok: false, error: error.message };
 
+  // The live cards read the latest balance directly, while the trend chart
+  // reads today's aggregate snapshot. Await the small current-day upsert so
+  // both are consistent as soon as the save returns; historical estimates can
+  // still be recomputed after the response.
+  await upsertTodaySnapshot(user.id);
   after(async () => {
-    await upsertTodaySnapshot(user.id);
     await recomputeBackfillRange(user.id);
   });
-  revalidatePath("/dashboard");
+  revalidatePortfolioPages();
   return { ok: true };
 }
 
@@ -128,7 +169,7 @@ export async function refreshMissingLogos(): Promise<
     }),
   );
 
-  revalidatePath("/dashboard");
+  revalidatePortfolioPages();
   return { ok: true, updated };
 }
 
@@ -152,7 +193,7 @@ export async function deleteAsset(assetId: string): Promise<MutateResult> {
     await upsertTodaySnapshot(user.id);
     await recomputeBackfillRange(user.id);
   });
-  revalidatePath("/dashboard");
+  revalidatePortfolioPages();
   return { ok: true };
 }
 
@@ -402,6 +443,6 @@ export async function addAsset(
     await upsertTodaySnapshot(user.id);
     await backfillUserHistory(user.id);
   });
-  revalidatePath("/dashboard");
+  revalidatePortfolioPages();
   return { ok: true, assetId };
 }
